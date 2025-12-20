@@ -171,6 +171,44 @@ fun Route.tokenDebugRoutes() {
                 )
             }
         }
+        
+        get("/master-status") {
+            try {
+                val stats = com.jeromeent.stockhunter.client.StockMasterCache.getCacheStats("KOSPI_KOSDAQ")
+                
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf(
+                        "status" to "success",
+                        "masterStats" to stats,
+                        "message" to "종목 마스터는 7일간 캐시되며, CSV 파일에서 자동 로드됩니다."
+                    )
+                )
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf(
+                        "status" to "no_master",
+                        "message" to "캐시된 마스터가 없습니다. 첫 스크리닝 시 자동으로 로드됩니다."
+                    )
+                )
+            }
+        }
+        
+        delete("/clear-master-cache") {
+            try {
+                com.jeromeent.stockhunter.client.StockMasterCache.clearAllCaches()
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf("status" to "success", "message" to "All master caches cleared")
+                )
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Failed to clear master cache")
+                )
+            }
+        }
     }
 }
 
@@ -191,7 +229,7 @@ fun Route.domesticScreeningRoutes() {
                 val kisClient = KISApiClient(
                     appKey = condition.appKey,
                     appSecret = condition.appSecret,
-                    isProduction = false // 모의투자 환경
+                    isProduction = condition.isProduction  // 사용자가 선택한 환경
                 )
                 
                 // 스크리너 실행

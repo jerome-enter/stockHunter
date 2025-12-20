@@ -216,19 +216,117 @@ class KISApiClient(
     }
     
     /**
-     * 전체 종목 코드 조회 (하드코딩 - 실제로는 마스터 파일 다운로드 필요)
+     * 전체 종목 코드 조회
      * 
-     * TODO: 실제 운영에서는 종목 마스터 파일을 다운로드하여 사용
-     * @see https://apiportal.koreainvestment.com/apiservice-apiservice
+     * 캐시 전략:
+     * 1. 캐시 확인 (7일 이내)
+     * 2. 없으면 API에서 다운로드
+     * 3. 캐시에 저장
      */
-    fun getAllStockCodes(): List<String> {
-        return stockNames.keys.toList()
+    suspend fun getAllStockCodes(): List<String> {
+        // 1. 캐시된 마스터 데이터 확인
+        val cachedStocks = StockMasterCache.loadMasterData("KOSPI_KOSDAQ")
+        if (cachedStocks != null) {
+            return cachedStocks.map { it.code }
+        }
+        
+        // 2. 캐시 없으면 다운로드
+        logger.info { "Downloading stock master data from API..." }
+        val stocks = downloadStockMaster()
+        
+        // 3. 캐시에 저장
+        StockMasterCache.saveMasterData(stocks, "KOSPI_KOSDAQ")
+        
+        return stocks.map { it.code }
+    }
+    
+    /**
+     * 종목 마스터 데이터 다운로드
+     * 
+     * CSV 파일에서 전체 종목 리스트를 로드합니다.
+     * resources/stock_master.csv
+     */
+    private suspend fun downloadStockMaster(): List<StockInfo> {
+        val stocks = mutableListOf<StockInfo>()
+        
+        try {
+            logger.info { "Loading stock master from CSV file..." }
+            
+            // CSV 파일 읽기
+            val csvContent = this::class.java.classLoader
+                .getResourceAsStream("stock_master.csv")
+                ?.bufferedReader()
+                ?.readText()
+            
+            if (csvContent != null) {
+                // CSV 파싱
+                csvContent.lines()
+                    .drop(1) // 헤더 스킵
+                    .filter { it.isNotBlank() }
+                    .forEach { line ->
+                        val cols = line.split(",")
+                        if (cols.size >= 3) {
+                            stocks.add(StockInfo(
+                                code = cols[0].trim(),
+                                name = cols[1].trim(),
+                                market = cols[2].trim(),
+                                sector = cols.getOrNull(3)?.trim(),
+                                isETF = cols[1].contains("ETF", ignoreCase = true),
+                                isETN = cols[1].contains("ETN", ignoreCase = true)
+                            ))
+                        }
+                    }
+                
+                logger.info { "✅ Loaded ${stocks.size} stocks from CSV file" }
+            } else {
+                throw Exception("CSV file not found in resources")
+            }
+            
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to load stock master from CSV" }
+            logger.warn { "⚠️ Falling back to hardcoded stock list (30 stocks)" }
+            
+            // 실패 시 하드코딩된 종목 사용
+            stockNames.forEach { (code, name) ->
+                stocks.add(StockInfo(
+                    code = code,
+                    name = name,
+                    market = determineMarket(code),
+                    isETF = name.contains("ETF"),
+                    isETN = name.contains("ETN")
+                ))
+            }
+        }
+        
+        return stocks
+    }
+    
+    /**
+     * 종목코드로 시장 구분 판단 (간단한 휴리스틱)
+     */
+    private fun determineMarket(code: String): String {
+        return when {
+            code.startsWith("00") || code.startsWith("005") -> "KOSPI"
+            else -> "KOSDAQ"
+        }
     }
     
     /**
      * 종목코드로 종목명 조회
+     * 
+     * 1. 캐시된 마스터에서 찾기
+     * 2. 하드코딩된 맵에서 찾기
+     * 3. 없으면 코드 그대로 반환
      */
     fun getStockName(code: String): String {
+        // 캐시에서 찾기
+        val cached = StockMasterCache.loadMasterData("KOSPI_KOSDAQ")
+        if (cached != null) {
+            val stock = cached.find { it.code == code }
+            if (stock != null) return stock.name
+        }
+        
+        // 하드코딩된 맵에서 찾기
         return stockNames[code] ?: code
     }
     

@@ -42,6 +42,7 @@ data class USStockData(
 data class USScreeningCondition(
     override val appKey: String,
     override val appSecret: String,
+    val isProduction: Boolean = false,  // 실전투자 여부
     override val market: Market = Market.US_NASDAQ,
     val exchangeCode: String = "NAS", // NAS(나스닥), NYS(뉴욕), AMS(아멕스)
     

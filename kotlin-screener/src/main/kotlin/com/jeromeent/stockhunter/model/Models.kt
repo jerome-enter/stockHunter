@@ -85,6 +85,7 @@ data class ScreeningCondition(
     // API 인증
     val appKey: String,
     val appSecret: String,
+    val isProduction: Boolean = false,  // 실전투자 여부
     
     // 이동평균선 조건
     val ma60Enabled: Boolean = false,

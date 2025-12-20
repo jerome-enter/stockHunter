@@ -47,6 +47,7 @@ class ScreeningRequest(BaseModel):
     """스크리닝 요청 모델"""
     appKey: str = Field(..., description="한국투자증권 APP KEY")
     appSecret: str = Field(..., description="한국투자증권 APP SECRET")
+    isProduction: bool = Field(False, description="실전투자 여부 (True: 실전, False: 모의)")
     
     # 이동평균선 조건
     ma60Enabled: bool = False
