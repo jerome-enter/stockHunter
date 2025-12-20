@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주식단타 최강안정화 검색기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: linear-gradient(to bottom right, #0f172a, #1e3a8a, #0f172a);
+      min-height: 100vh;
+    }
+  </style>
+</head>
+<body class="p-4 md:p-6">
+  <div id="app" class="max-w-7xl mx-auto"></div>
+
+  <script>
+    const app = {
+      selectedMarket: 'domestic',  // domestic or us
+      conditions: {
+        market: 'domestic',
+        exchangeCode: 'KRX',  // KRX(국내), NAS(나스닥), NYS(뉴욕)
+        excludeManagement: false,
+        ma60Enabled: false,
+        ma60Min: 95,
+        ma60Max: 105,
+        ma112Enabled: true,
+        ma112Min: 95,
+        ma112Max: 105,
+        ma224Enabled: false,
+        ma224Min: 95,
+        ma224Max: 105,
+        excludeETF: true,
+        excludeETN: true,
+        volumeEnabled: false,
+        volumeMultiple: 1.5,
+        maAlignment: false,
+        bbEnabled: false,
+        bbPeriod: 20,
+        bbMultiplier: 2,
+        bbPosition: 'all',
+        bbUpperBreak: false,
+        bbLowerBreak: false,
+        priceChangeEnabled: false,
+        priceChangeMin: -100,
+        priceChangeMax: 100,
+        marketCapEnabled: false,
+        marketCapMin: 0,
+        marketCapMax: 10000000000000,
+        perEnabled: false,
+        perMin: 0,
+        perMax: 30,
+        pbrEnabled: false,
+        pbrMin: 0,
+        pbrMax: 3,
+      },
+      appKey: '',
+      appSecret: '',
+      accessToken: '',
+      results: [],
+      loading: false,
+      error: ''
+    };
+
+    // FastAPI 백엔드 URL (같은 서버 사용)
+    const API_BASE_URL = window.location.origin;
+
+    async function validateCredentials() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/validate-credentials`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appKey: app.appKey,
+            appSecret: app.appSecret
+          })
+        });
+        
+        const data = await response.json();
+        if (data.valid) {
+          app.error = '';
+          return true;
+        } else {
+          throw new Error(data.message || '인증 실패');
+        }
+      } catch (err) {
+        app.error = 'API 인증 실패: ' + err.message;
+        render();
+        return false;
+      }
+    }
+
+    // 기술적 지표 계산 함수들은 백엔드에서 처리되므로 제거됨
+
+    async function runScreener() {
+      if (!app.appKey || !app.appSecret) {
+        app.error = 'APP KEY와 APP SECRET을 입력해주세요';
+        render();
+        return;
+      }
+
+      app.loading = true;
+      app.error = '';
+      app.results = [];
+      render();
+
+      try {
+        // FastAPI 백엔드로 스크리닝 요청 전송
+        const response = await fetch(`${API_BASE_URL}/api/v1/screen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appKey: app.appKey,
+            appSecret: app.appSecret,
+            ...app.conditions
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || errorData.detail || '스크리닝 실패');
+        }
+
+        const result = await response.json();
+        
+        // 결과 변환 (백엔드 응답 형식에 맞게)
+        app.results = result.stocks.map(stock => ({
+          code: stock.code,
+          name: stock.name,
+          currentPrice: stock.currentPrice,
+          changePercent: stock.changePercent,
+          ma5: stock.ma5,
+          ma20: stock.ma20,
+          ma60: stock.ma60,
+          ma112: stock.ma112,
+          ma224: stock.ma224,
+          ma60Ratio: stock.ma60Ratio,
+          ma112Ratio: stock.ma112Ratio,
+          ma224Ratio: stock.ma224Ratio,
+          bbPosition: stock.bbPosition,
+          currentVolume: stock.volume,
+          volumeRatio: stock.volumeRatio,
+          maAlignment: stock.maAlignment
+        }));
+
+        console.log(`스크리닝 완료: ${result.matchedCount}/${result.totalScanned} 종목 (${result.executionTimeMs}ms)`);
+        
+      } catch (err) {
+        app.error = '검색 중 오류 발생: ' + err.message;
+        console.error('Screening error:', err);
+      } finally {
+        app.loading = false;
+        render();
+      }
+    }
+
+    function render() {
+      const appDiv = document.getElementById('app');
+      appDiv.innerHTML = `
+        <div class="text-center mb-8">
+          <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">📈 주식 조건 검색기</h1>
+          <p class="text-blue-200">기술적 분석 기반 종목 스크리닝</p>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 md:p-6 mb-6 border border-white/20">
+          <h2 class="text-lg md:text-xl font-bold text-white mb-4">🔑 한국투자증권 API 설정</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-sm font-medium text-blue-200 mb-2">APP KEY</label>
+              <input type="text" id="appKey" value="${app.appKey}" placeholder="APP KEY 입력"
+                class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-blue-200 mb-2">APP SECRET</label>
+              <input type="password" id="appSecret" value="${app.appSecret}" placeholder="APP SECRET 입력"
+                class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+          </div>
+          <div class="text-sm text-blue-200 bg-blue-900/30 p-3 rounded-lg">
+            <strong>API 키 발급:</strong> 한국투자증권 홈페이지 → KIS Developers → 앱 등록
+          </div>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 md:p-6 mb-6 border border-white/20">
+          <h2 class="text-lg md:text-xl font-bold text-white mb-4">⚙️ 조건설정</h2>
+          
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">제외 조건</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="excludeManagement" ${app.conditions.excludeManagement ? 'checked' : ''} class="w-4 h-4">
+                <span>관리종목/투자경고</span>
+              </label>
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="excludeETF" ${app.conditions.excludeETF ? 'checked' : ''} class="w-4 h-4">
+                <span>ETF/ETN 제외</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">이동평균선</h3>
+            <div class="space-y-3">
+              ${[
+                { key: 'ma60', label: '60일' },
+                { key: 'ma112', label: '112일' },
+                { key: 'ma224', label: '224일' }
+              ].map(ma => `
+                <div class="flex items-center gap-2 flex-wrap">
+                  <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                    <input type="checkbox" id="${ma.key}Enabled" ${app.conditions[ma.key + 'Enabled'] ? 'checked' : ''} class="w-4 h-4">
+                    <span>${ma.label} 이평 ±</span>
+                  </label>
+                  <input type="number" id="${ma.key}Min" value="${app.conditions[ma.key + 'Min']}" 
+                    class="w-16 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions[ma.key + 'Enabled'] ? 'disabled' : ''}>
+                  <span class="text-white">~</span>
+                  <input type="number" id="${ma.key}Max" value="${app.conditions[ma.key + 'Max']}" 
+                    class="w-16 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions[ma.key + 'Enabled'] ? 'disabled' : ''}>
+                  <span class="text-blue-300 text-sm">%</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">볼린저 밴드</h3>
+            <div class="space-y-3">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="bbEnabled" ${app.conditions.bbEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>BB 조건 사용</span>
+              </label>
+              
+              <div class="space-y-2 ml-6 ${!app.conditions.bbEnabled ? 'opacity-50' : ''}">
+                <div class="text-sm text-blue-300 mb-2">전략 선택:</div>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="radio" name="bbPreset" value="short" 
+                    ${app.conditions.bbPeriod === 10 && app.conditions.bbMultiplier === 1.5 ? 'checked' : ''}
+                    ${!app.conditions.bbEnabled ? 'disabled' : ''} class="w-4 h-4">
+                  <span>단기 트레이딩 (10일, ±1.5σ) - 민감하게 반응</span>
+                </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="radio" name="bbPreset" value="normal" 
+                    ${app.conditions.bbPeriod === 20 && app.conditions.bbMultiplier === 2 ? 'checked' : ''}
+                    ${!app.conditions.bbEnabled ? 'disabled' : ''} class="w-4 h-4">
+                  <span>일반적 (20일, ±2σ) - 가장 많이 사용 ⭐</span>
+                </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="radio" name="bbPreset" value="long" 
+                    ${app.conditions.bbPeriod === 30 && app.conditions.bbMultiplier === 3 ? 'checked' : ''}
+                    ${!app.conditions.bbEnabled ? 'disabled' : ''} class="w-4 h-4">
+                  <span>장기 투자 (30일, ±3σ) - 안정적</span>
+                </label>
+              </div>
+              
+              <select id="bbPosition" class="px-3 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                ${!app.conditions.bbEnabled ? 'disabled' : ''}>
+                <option value="all" ${app.conditions.bbPosition === 'all' ? 'selected' : ''}>위치 무관</option>
+                <option value="lower" ${app.conditions.bbPosition === 'lower' ? 'selected' : ''}>하단 밴드 근처 (과매도)</option>
+                <option value="middle" ${app.conditions.bbPosition === 'middle' ? 'selected' : ''}>중간 밴드 근처</option>
+                <option value="upper" ${app.conditions.bbPosition === 'upper' ? 'selected' : ''}>상단 밴드 근처 (과매수)</option>
+              </select>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="checkbox" id="bbUpperBreak" ${app.conditions.bbUpperBreak ? 'checked' : ''} class="w-4 h-4">
+                  <span>상단 밴드 돌파 (강한 상승)</span>
+                </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="checkbox" id="bbLowerBreak" ${app.conditions.bbLowerBreak ? 'checked' : ''} class="w-4 h-4">
+                  <span>하단 밴드 터치 (반등 기회)</span>
+                </label>
+              </div>
+              
+              <div class="text-xs text-blue-300 bg-blue-900/20 p-2 rounded mt-2">
+                💡 상단 돌파: 주가 > 상단 밴드 | 하단 터치: 주가 ≤ 하단 밴드
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">거래량</h3>
+            <div class="flex items-center gap-2 flex-wrap">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="volumeEnabled" ${app.conditions.volumeEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>평균 대비</span>
+              </label>
+              <input type="number" step="0.1" id="volumeMultiple" value="${app.conditions.volumeMultiple}" 
+                class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                ${!app.conditions.volumeEnabled ? 'disabled' : ''}>
+              <span class="text-blue-300 text-sm">배</span>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">가격 변동</h3>
+            <div class="space-y-2">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="priceChangeEnabled" ${app.conditions.priceChangeEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>등락률 범위</span>
+              </label>
+              <div class="flex items-center gap-2 ml-6">
+                <input type="number" step="0.1" id="priceChangeMin" value="${app.conditions.priceChangeMin}" 
+                  class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                  ${!app.conditions.priceChangeEnabled ? 'disabled' : ''}>
+                <span class="text-white">~</span>
+                <input type="number" step="0.1" id="priceChangeMax" value="${app.conditions.priceChangeMax}" 
+                  class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                  ${!app.conditions.priceChangeEnabled ? 'disabled' : ''}>
+                <span class="text-blue-300 text-sm">%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">추가 조건</h3>
+            <div class="space-y-2">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="maAlignment" ${app.conditions.maAlignment ? 'checked' : ''} class="w-4 h-4">
+                <span>이평선 정배열 (5 > 20 > 60 > 112)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">시가총액 (억원)</h3>
+            <div class="space-y-2">
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="marketCapEnabled" ${app.conditions.marketCapEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>시가총액 범위</span>
+              </label>
+              <div class="flex items-center gap-2 ml-6">
+                <input type="number" step="1000" id="marketCapMin" value="${app.conditions.marketCapMin / 100000000}" 
+                  class="w-24 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                  ${!app.conditions.marketCapEnabled ? 'disabled' : ''}>
+                <span class="text-white">~</span>
+                <input type="number" step="1000" id="marketCapMax" value="${app.conditions.marketCapMax / 100000000}" 
+                  class="w-24 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                  ${!app.conditions.marketCapEnabled ? 'disabled' : ''}>
+                <span class="text-blue-300 text-sm">억</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">재무 비율</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm mb-2">
+                  <input type="checkbox" id="perEnabled" ${app.conditions.perEnabled ? 'checked' : ''} class="w-4 h-4">
+                  <span>PER (주가수익비율)</span>
+                </label>
+                <div class="flex items-center gap-2 ml-6">
+                  <input type="number" step="1" id="perMin" value="${app.conditions.perMin}" 
+                    class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions.perEnabled ? 'disabled' : ''}>
+                  <span class="text-white">~</span>
+                  <input type="number" step="1" id="perMax" value="${app.conditions.perMax}" 
+                    class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions.perEnabled ? 'disabled' : ''}>
+                </div>
+              </div>
+              <div>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm mb-2">
+                  <input type="checkbox" id="pbrEnabled" ${app.conditions.pbrEnabled ? 'checked' : ''} class="w-4 h-4">
+                  <span>PBR (주가순자산비율)</span>
+                </label>
+                <div class="flex items-center gap-2 ml-6">
+                  <input type="number" step="0.1" id="pbrMin" value="${app.conditions.pbrMin}" 
+                    class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions.pbrEnabled ? 'disabled' : ''}>
+                  <span class="text-white">~</span>
+                  <input type="number" step="0.1" id="pbrMax" value="${app.conditions.pbrMax}" 
+                    class="w-20 px-2 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
+                    ${!app.conditions.pbrEnabled ? 'disabled' : ''}>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button onclick="runScreener()" ${app.loading ? 'disabled' : ''}
+            class="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-gray-500 disabled:to-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-all">
+            ${app.loading ? '🔄 검색 중...' : '🔍 조건 검색 실행'}
+          </button>
+        </div>
+
+        ${app.error ? `
+          <div class="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-6">
+            ${app.error}
+          </div>
+        ` : ''}
+
+        ${app.results.length > 0 ? `
+          <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 md:p-6 border border-white/20">
+            <h2 class="text-lg md:text-xl font-bold text-white mb-4">✅ 검색 결과 (${app.results.length}개)</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs md:text-sm">
+                <thead>
+                  <tr class="border-b border-white/20">
+                    <th class="px-2 py-2 text-blue-200">종목명</th>
+                    <th class="px-2 py-2 text-blue-200">현재가</th>
+                    <th class="px-2 py-2 text-blue-200">등락%</th>
+                    <th class="px-2 py-2 text-blue-200">112일선</th>
+                    <th class="px-2 py-2 text-blue-200">비율</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${app.results.map(stock => `
+                    <tr class="border-b border-white/10 hover:bg-white/5">
+                      <td class="px-2 py-2 text-white font-medium">${stock.name}</td>
+                      <td class="px-2 py-2 text-white">${parseFloat(stock.currentPrice).toLocaleString()}</td>
+                      <td class="px-2 py-2 ${parseFloat(stock.changePercent) >= 0 ? 'text-red-400' : 'text-blue-400'} font-bold">
+                        ${stock.changePercent}%
+                      </td>
+                      <td class="px-2 py-2 text-white">${stock.ma112}</td>
+                      <td class="px-2 py-2 text-green-400">${stock.ma112Ratio}%</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : !app.loading ? `
+          <div class="bg-white/5 backdrop-blur-sm rounded-xl p-8 text-center border border-white/10">
+            <p class="text-blue-200 text-base md:text-lg">API 키를 입력하고 조건을 설정한 후 검색을 실행하세요</p>
+          </div>
+        ` : ''}
+      `;
+
+      // 이벤트 리스너 등록
+      ['appKey', 'appSecret'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', (e) => {
+          app[id] = e.target.value;
+        });
+      });
+
+      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'ma60Enabled', 'ma112Enabled', 'ma224Enabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', (e) => {
+          app.conditions[id] = e.target.checked;
+          render();
+        });
+      });
+
+      ['ma60Min', 'ma60Max', 'ma112Min', 'ma112Max', 'ma224Min', 'ma224Max', 'volumeMultiple', 'priceChangeMin', 'priceChangeMax', 'perMin', 'perMax', 'pbrMin', 'pbrMax'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', (e) => {
+          app.conditions[id] = parseFloat(e.target.value);
+        });
+      });
+
+      // 시가총액 (억원 단위 변환)
+      ['marketCapMin', 'marketCapMax'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', (e) => {
+          app.conditions[id] = parseFloat(e.target.value) * 100000000; // 억원 → 원
+        });
+      });
+
+      // 볼린저 밴드 프리셋 라디오 버튼
+      document.querySelectorAll('input[name="bbPreset"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          const presets = {
+            short: { period: 10, multiplier: 1.5 },
+            normal: { period: 20, multiplier: 2 },
+            long: { period: 30, multiplier: 3 }
+          };
+          const preset = presets[e.target.value];
+          if (preset) {
+            app.conditions.bbPeriod = preset.period;
+            app.conditions.bbMultiplier = preset.multiplier;
+          }
+        });
+      });
+
+      const bbPos = document.getElementById('bbPosition');
+      if (bbPos) bbPos.addEventListener('change', (e) => {
+        app.conditions.bbPosition = e.target.value;
+      });
+    }
+
+    // 초기 렌더링
+    render();
+  </script>
+</body>
+</html>

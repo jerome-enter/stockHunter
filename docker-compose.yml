@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # Kotlin 스크리닝 엔진
+  kotlin-screener:
+    build:
+      context: ./kotlin-screener
+      dockerfile: Dockerfile
+    container_name: stock-hunter-kotlin
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - stock-hunter-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # FastAPI 게이트웨이
+  fastapi-gateway:
+    build:
+      context: ./fastapi-gateway
+      dockerfile: Dockerfile
+    container_name: stock-hunter-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - KOTLIN_SERVICE_URL=http://kotlin-screener:8080
+      - ENVIRONMENT=production
+    volumes:
+      - ./stock_screener.html:/app/stock_screener.html:ro  # HTML 파일 마운트
+    depends_on:
+      kotlin-screener:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - stock-hunter-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  stock-hunter-network:
+    driver: bridge

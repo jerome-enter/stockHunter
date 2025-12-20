@@ -1,0 +1,47 @@
+# Kotlin/Gradle
+.gradle/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+.idea/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+*.key
+*.pem
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
