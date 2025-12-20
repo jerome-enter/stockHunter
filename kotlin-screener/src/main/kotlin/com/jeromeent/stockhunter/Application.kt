@@ -101,6 +101,7 @@ fun Application.module() {
     // 라우팅
     routing {
         healthCheck()
+        tokenDebugRoutes()          // 토큰 디버그 (개발용)
         domesticScreeningRoutes()  // 기존 국내주식
         usScreeningRoutes()         // 신규 미국주식
     }
@@ -122,6 +123,54 @@ fun Route.healthCheck() {
                 timestamp = System.currentTimeMillis()
             )
         )
+    }
+}
+
+/**
+ * 토큰 디버그 라우트 (개발용)
+ */
+fun Route.tokenDebugRoutes() {
+    route("/api/v1/debug") {
+        get("/token-status") {
+            try {
+                val appKey = call.request.queryParameters["appKey"] ?: ""
+                val isProduction = call.request.queryParameters["production"]?.toBoolean() ?: false
+                
+                val stats = com.jeromeent.stockhunter.client.TokenCache.getTokenStats(appKey, isProduction)
+                
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf(
+                        "status" to "success",
+                        "tokenStats" to stats,
+                        "message" to "한국투자증권 API 토큰은 24시간 유효하며, 파일 캐시를 통해 재사용됩니다."
+                    )
+                )
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf(
+                        "status" to "no_token",
+                        "message" to "캐시된 토큰이 없습니다. 첫 API 호출 시 자동으로 발급됩니다."
+                    )
+                )
+            }
+        }
+        
+        delete("/clear-token-cache") {
+            try {
+                com.jeromeent.stockhunter.client.TokenCache.clearAllTokens()
+                call.respond(
+                    HttpStatusCode.OK,
+                    mapOf("status" to "success", "message" to "All token caches cleared")
+                )
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Failed to clear cache")
+                )
+            }
+        }
     }
 }
 

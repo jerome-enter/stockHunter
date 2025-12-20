@@ -11,6 +11,8 @@ services:
       - "8080:8080"
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m
+    volumes:
+      - token-cache:/root/.stockhunter  # 토큰 캐시 영구 저장
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -60,3 +62,7 @@ services:
 networks:
   stock-hunter-network:
     driver: bridge
+
+volumes:
+  token-cache:
+    driver: local

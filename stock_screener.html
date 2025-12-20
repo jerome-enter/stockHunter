@@ -400,6 +400,7 @@
                 <thead>
                   <tr class="border-b border-white/20">
                     <th class="px-2 py-2 text-blue-200">종목명</th>
+                    <th class="px-2 py-2 text-blue-200">종목코드</th>
                     <th class="px-2 py-2 text-blue-200">현재가</th>
                     <th class="px-2 py-2 text-blue-200">등락%</th>
                     <th class="px-2 py-2 text-blue-200">112일선</th>
@@ -410,6 +411,7 @@
                   ${app.results.map(stock => `
                     <tr class="border-b border-white/10 hover:bg-white/5">
                       <td class="px-2 py-2 text-white font-medium">${stock.name}</td>
+                      <td class="px-2 py-2 text-gray-300 text-xs">${stock.code}</td>
                       <td class="px-2 py-2 text-white">${parseFloat(stock.currentPrice).toLocaleString()}</td>
                       <td class="px-2 py-2 ${parseFloat(stock.changePercent) >= 0 ? 'text-red-400' : 'text-blue-400'} font-bold">
                         ${stock.changePercent}%

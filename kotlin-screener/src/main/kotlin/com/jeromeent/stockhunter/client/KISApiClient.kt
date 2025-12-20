@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 private val logger = KotlinLogging.logger {}
 
@@ -75,16 +76,34 @@ class KISApiClient(
     
     /**
      * Access Token 발급
+     * 
+     * 한국투자증권 정책:
+     * - 토큰 유효기간: 24시간
+     * - 1일 1회 발급 권장
+     * - 파일 캐시를 통해 서버 재시작 시에도 토큰 재사용
      */
     suspend fun getAccessToken(): String {
-        // 캐시된 토큰이 유효한 경우 재사용
+        // 1. 메모리 캐시 확인 (빠른 재사용)
         if (cachedToken != null && tokenExpireTime != null) {
             if (Instant.now().isBefore(tokenExpireTime!!.minusSeconds(300))) {
                 return cachedToken!!
             }
         }
         
-        logger.info { "Requesting new access token..." }
+        // 2. 파일 캐시 확인 (서버 재시작 후에도 유지)
+        val cachedFromFile = TokenCache.loadToken(appKey, isProduction)
+        if (cachedFromFile != null) {
+            // 메모리 캐시에도 로드
+            cachedToken = cachedFromFile
+            // 만료시간은 대략적으로 24시간으로 설정 (정확한 시간은 파일에 저장됨)
+            tokenExpireTime = Instant.now().plus(24, ChronoUnit.HOURS)
+            logger.info { "✅ Reusing cached token from file (no API call needed)" }
+            return cachedFromFile
+        }
+        
+        // 3. 새 토큰 발급 (캐시에 없을 때만)
+        logger.info { "⚠️ No valid cached token. Requesting NEW access token from API..." }
+        logger.warn { "한국투자증권 API 정책: 1일 1회 토큰 발급 권장. 과도한 발급 시 제한될 수 있습니다." }
         
         try {
             val response = httpClient.post("$baseUrl/oauth2/tokenP") {
@@ -100,7 +119,15 @@ class KISApiClient(
             cachedToken = tokenResponse.access_token
             tokenExpireTime = Instant.now().plusSeconds(tokenResponse.expires_in.toLong())
             
-            logger.info { "Access token acquired successfully. Expires in ${tokenResponse.expires_in}s" }
+            // 파일에 캐시 저장 (서버 재시작 후에도 재사용)
+            TokenCache.saveToken(
+                appKey = appKey,
+                token = tokenResponse.access_token,
+                expiresInSeconds = tokenResponse.expires_in,
+                isProduction = isProduction
+            )
+            
+            logger.info { "✅ New access token acquired and cached. Expires in ${tokenResponse.expires_in}s (~${tokenResponse.expires_in/3600}h)" }
             return cachedToken!!
             
         } catch (e: Exception) {
@@ -151,50 +178,58 @@ class KISApiClient(
     }
     
     /**
+     * 종목 코드와 이름 매핑
+     */
+    companion object {
+        private val stockNames = mapOf(
+            "005930" to "삼성전자",
+            "000660" to "SK하이닉스",
+            "035420" to "NAVER",
+            "051910" to "LG화학",
+            "006400" to "삼성SDI",
+            "035720" to "카카오",
+            "005380" to "현대차",
+            "012330" to "현대모비스",
+            "055550" to "신한지주",
+            "207940" to "삼성바이오로직스",
+            "068270" to "셀트리온",
+            "028260" to "삼성물산",
+            "015760" to "한국전력",
+            "017670" to "SK텔레콤",
+            "096770" to "SK이노베이션",
+            "000270" to "기아",
+            "003670" to "포스코퓨처엠",
+            "105560" to "KB금융",
+            "034730" to "SK",
+            "003550" to "LG",
+            "009150" to "삼성전기",
+            "010950" to "S-Oil",
+            "011170" to "롯데케미칼",
+            "032830" to "삼성생명",
+            "066570" to "LG전자",
+            "086790" to "하나금융지주",
+            "018260" to "삼성에스디에스",
+            "009540" to "한국조선해양",
+            "000810" to "삼성화재",
+            "033780" to "KT&G"
+        )
+    }
+    
+    /**
      * 전체 종목 코드 조회 (하드코딩 - 실제로는 마스터 파일 다운로드 필요)
      * 
      * TODO: 실제 운영에서는 종목 마스터 파일을 다운로드하여 사용
      * @see https://apiportal.koreainvestment.com/apiservice-apiservice
      */
     fun getAllStockCodes(): List<String> {
-        // 코스피 주요 종목 (예시)
-        return listOf(
-            // 시가총액 상위
-            "005930", // 삼성전자
-            "000660", // SK하이닉스
-            "035420", // NAVER
-            "051910", // LG화학
-            "006400", // 삼성SDI
-            "035720", // 카카오
-            "005380", // 현대차
-            "012330", // 현대모비스
-            "055550", // 신한지주
-            "207940", // 삼성바이오로직스
-            
-            // 주요 대형주
-            "068270", // 셀트리온
-            "028260", // 삼성물산
-            "015760", // 한국전력
-            "017670", // SK텔레콤
-            "096770", // SK이노베이션
-            "000270", // 기아
-            "003670", // 포스코퓨처엠
-            "105560", // KB금융
-            "034730", // SK
-            "003550", // LG
-            
-            // 중형주
-            "009150", // 삼성전기
-            "010950", // S-Oil
-            "011170", // 롯데케미칼
-            "032830", // 삼성생명
-            "066570", // LG전자
-            "086790", // 하나금융지주
-            "018260", // 삼성에스디에스
-            "009540", // 한국조선해양
-            "000810", // 삼성화재
-            "033780"  // KT&G
-        )
+        return stockNames.keys.toList()
+    }
+    
+    /**
+     * 종목코드로 종목명 조회
+     */
+    fun getStockName(code: String): String {
+        return stockNames[code] ?: code
     }
     
     /**

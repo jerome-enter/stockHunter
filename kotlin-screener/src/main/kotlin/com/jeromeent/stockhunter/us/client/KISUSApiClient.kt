@@ -1,6 +1,7 @@
 package com.jeromeent.stockhunter.us.client
 
 import com.google.common.util.concurrent.RateLimiter
+import com.jeromeent.stockhunter.client.TokenCache
 import com.jeromeent.stockhunter.us.model.*
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -54,15 +55,27 @@ class KISUSApiClient(
     
     /**
      * Access Token 발급 (국내와 동일)
+     * 파일 캐시를 통해 토큰 재사용
      */
     suspend fun getAccessToken(): String {
+        // 1. 메모리 캐시 확인
         if (cachedToken != null && tokenExpireTime != null) {
             if (Instant.now().isBefore(tokenExpireTime!!.minusSeconds(300))) {
                 return cachedToken!!
             }
         }
         
-        logger.info { "Requesting new access token for US stocks..." }
+        // 2. 파일 캐시 확인
+        val cachedFromFile = TokenCache.loadToken(appKey, isProduction)
+        if (cachedFromFile != null) {
+            cachedToken = cachedFromFile
+            tokenExpireTime = Instant.now().plus(24, java.time.temporal.ChronoUnit.HOURS)
+            logger.info { "✅ Reusing cached US stocks token from file" }
+            return cachedFromFile
+        }
+        
+        // 3. 새 토큰 발급
+        logger.info { "⚠️ Requesting new access token for US stocks..." }
         
         try {
             val response = httpClient.post("$baseUrl/oauth2/tokenP") {
@@ -78,7 +91,10 @@ class KISUSApiClient(
             cachedToken = tokenResponse.access_token
             tokenExpireTime = Instant.now().plusSeconds(tokenResponse.expires_in.toLong())
             
-            logger.info { "US stocks access token acquired" }
+            // 파일에 캐시
+            TokenCache.saveToken(appKey, tokenResponse.access_token, tokenResponse.expires_in, isProduction)
+            
+            logger.info { "✅ US stocks access token acquired and cached" }
             return cachedToken!!
             
         } catch (e: Exception) {
@@ -164,58 +180,78 @@ class KISUSApiClient(
     }
     
     /**
+     * 미국 종목 심볼과 이름 매핑
+     */
+    companion object {
+        private val usStockNames = mapOf(
+            // NASDAQ
+            "AAPL" to "애플",
+            "MSFT" to "마이크로소프트",
+            "GOOGL" to "구글",
+            "AMZN" to "아마존",
+            "NVDA" to "엔비디아",
+            "META" to "메타",
+            "TSLA" to "테슬라",
+            "AVGO" to "브로드컴",
+            "COST" to "코스트코",
+            "NFLX" to "넷플릭스",
+            "AMD" to "AMD",
+            "INTC" to "인텔",
+            "CSCO" to "시스코",
+            "ADBE" to "어도비",
+            "CMCSA" to "컴캐스트",
+            "PEP" to "펩시코",
+            "PYPL" to "페이팔",
+            "QCOM" to "퀄컴",
+            "TXN" to "텍사스인스트루먼트",
+            "SBUX" to "스타벅스",
+            // NYSE
+            "JPM" to "JP모건",
+            "V" to "비자",
+            "JNJ" to "존슨앤존슨",
+            "WMT" to "월마트",
+            "MA" to "마스터카드",
+            "PG" to "P&G",
+            "UNH" to "유나이티드헬스",
+            "HD" to "홈디포",
+            "BAC" to "뱅크오브아메리카",
+            "DIS" to "디즈니",
+            "VZ" to "버라이즌",
+            "KO" to "코카콜라",
+            "T" to "AT&T",
+            "XOM" to "엑손모빌",
+            "CVX" to "쉐브론",
+            "ABT" to "애보트",
+            "MRK" to "머크",
+            "PFE" to "화이자",
+            "NKE" to "나이키",
+            "LLY" to "일라이릴리"
+        )
+    }
+    
+    /**
      * 미국 주요 종목 심볼 목록
      */
     fun getAllUSSymbols(exchangeCode: String = "NAS"): List<String> {
         return when (exchangeCode) {
-            "NAS" -> listOf(
-                // NASDAQ 주요 종목
-                "AAPL",  // 애플
-                "MSFT",  // 마이크로소프트
-                "GOOGL", // 구글
-                "AMZN",  // 아마존
-                "NVDA",  // 엔비디아
-                "META",  // 메타
-                "TSLA",  // 테슬라
-                "AVGO",  // 브로드컴
-                "COST",  // 코스트코
-                "NFLX",  // 넷플릭스
-                "AMD",   // AMD
-                "INTC",  // 인텔
-                "CSCO",  // 시스코
-                "ADBE",  // 어도비
-                "CMCSA", // 컴캐스트
-                "PEP",   // 펩시코
-                "PYPL",  // 페이팔
-                "QCOM",  // 퀄컴
-                "TXN",   // 텍사스인스트루먼트
-                "SBUX"   // 스타벅스
-            )
-            "NYS" -> listOf(
-                // NYSE 주요 종목
-                "JPM",   // JP모건
-                "V",     // 비자
-                "JNJ",   // 존슨앤존슨
-                "WMT",   // 월마트
-                "MA",    // 마스터카드
-                "PG",    // P&G
-                "UNH",   // 유나이티드헬스
-                "HD",    // 홈디포
-                "BAC",   // 뱅크오브아메리카
-                "DIS",   // 디즈니
-                "VZ",    // 버라이즌
-                "ADBE",  // 어도비
-                "KO",    // 코카콜라
-                "T",     // AT&T
-                "XOM",   // 엑손모빌
-                "CVX",   // 쉐브론
-                "ABT",   // 애보트
-                "MRK",   // 머크
-                "PFE",   // 화이자
-                "ORCL"   // 오라클
-            )
+            "NAS" -> usStockNames.keys.filter { it in listOf(
+                "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", 
+                "AVGO", "COST", "NFLX", "AMD", "INTC", "CSCO", "ADBE",
+                "CMCSA", "PEP", "PYPL", "QCOM", "TXN", "SBUX"
+            )}
+            "NYS" -> usStockNames.keys.filter { it in listOf(
+                "JPM", "V", "JNJ", "WMT", "MA", "PG", "UNH", "HD", "BAC",
+                "DIS", "VZ", "KO", "T", "XOM", "CVX", "ABT", "MRK", "PFE", "NKE", "LLY"
+            )}
             else -> emptyList()
         }
+    }
+    
+    /**
+     * 심볼로 종목명 조회
+     */
+    fun getUSStockName(symbol: String): String {
+        return usStockNames[symbol] ?: symbol
     }
     
     private suspend fun ensureAccessToken() {

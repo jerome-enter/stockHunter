@@ -207,7 +207,7 @@ class USStockScreener(
         
         return USStockData(
             symbol = symbol,
-            name = symbol,  // 종목명은 별도 API 필요 (일단 심볼 사용)
+            name = kisApiClient.getUSStockName(symbol),  // 한글 종목명
             currentPrice = currentPrice.roundTo(2),
             changePercent = changePercent.roundTo(2),
             volume = currentVolume,

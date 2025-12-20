@@ -93,7 +93,12 @@ class StockScreener(
         
         // 3. 데이터 변환
         val priceData = priceResponse.output
-        val stockName = priceData.firstOrNull()?.hts_kor_isnm ?: code
+        val apiStockName = priceData.firstOrNull()?.hts_kor_isnm
+        val stockName = if (!apiStockName.isNullOrBlank()) {
+            apiStockName
+        } else {
+            kisApiClient.getStockName(code)
+        }
         
         // ETF/ETN 필터링
         if (condition.excludeETF && stockName.contains("ETF")) return null
