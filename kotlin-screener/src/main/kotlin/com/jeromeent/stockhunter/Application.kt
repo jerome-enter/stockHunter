@@ -17,10 +17,43 @@ import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
+
+@Serializable
+data class HealthResponse(
+    val status: String,
+    val service: String,
+    val version: String,
+    val timestamp: Long
+)
+
+@Serializable
+data class StockCodesResponse(
+    val codes: List<String>,
+    val count: Int
+)
+
+@Serializable
+data class SymbolsResponse(
+    val symbols: List<String>,
+    val count: Int,
+    val exchange: String
+)
+
+@Serializable
+data class ValidationResponse(
+    val valid: Boolean,
+    val message: String
+)
+
+@Serializable
+data class ErrorResponse(
+    val error: String
+)
 
 fun main() {
     embeddedServer(
@@ -82,11 +115,11 @@ fun Route.healthCheck() {
     get("/health") {
         call.respond(
             HttpStatusCode.OK,
-            mapOf(
-                "status" to "healthy",
-                "service" to "stock-hunter",
-                "version" to "1.0.0",
-                "timestamp" to System.currentTimeMillis()
+            HealthResponse(
+                status = "healthy",
+                service = "stock-hunter",
+                version = "1.0.0",
+                timestamp = System.currentTimeMillis()
             )
         )
     }
@@ -151,9 +184,9 @@ fun Route.domesticScreeningRoutes() {
                 
                 call.respond(
                     HttpStatusCode.OK,
-                    mapOf(
-                        "valid" to true,
-                        "message" to "Credentials validated successfully"
+                    ValidationResponse(
+                        valid = true,
+                        message = "Credentials validated successfully"
                     )
                 )
                 
@@ -161,9 +194,9 @@ fun Route.domesticScreeningRoutes() {
                 logger.warn { "Credential validation failed: ${e.message}" }
                 call.respond(
                     HttpStatusCode.Unauthorized,
-                    mapOf(
-                        "valid" to false,
-                        "message" to (e.message ?: "Invalid credentials")
+                    ValidationResponse(
+                        valid = false,
+                        message = e.message ?: "Invalid credentials"
                     )
                 )
             }
@@ -171,16 +204,24 @@ fun Route.domesticScreeningRoutes() {
         
         // GET /api/v1/stock-codes - 지원 종목 코드 조회
         get("/stock-codes") {
-            val kisClient = KISApiClient("", "", isProduction = false)
-            val codes = kisClient.getAllStockCodes()
-            
-            call.respond(
-                HttpStatusCode.OK,
-                mapOf(
-                    "codes" to codes,
-                    "count" to codes.size
+            try {
+                val kisClient = KISApiClient("", "", isProduction = false)
+                val codes = kisClient.getAllStockCodes()
+                
+                call.respond(
+                    HttpStatusCode.OK,
+                    StockCodesResponse(
+                        codes = codes,
+                        count = codes.size
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                logger.error { "종목 코드 조회 실패: ${e.message}" }
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
         }
     }
 }
@@ -220,7 +261,7 @@ fun Route.usScreeningRoutes() {
                 logger.error(e) { "US screening failed: ${e.message}" }
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    mapOf("error" to (e.message ?: "US screening failed"))
+                    ErrorResponse(error = e.message ?: "US screening failed")
                 )
             }
         }
@@ -234,16 +275,16 @@ fun Route.usScreeningRoutes() {
                 
                 call.respond(
                     HttpStatusCode.OK,
-                    mapOf(
-                        "symbols" to symbols,
-                        "count" to symbols.size,
-                        "exchange" to exchange
+                    SymbolsResponse(
+                        symbols = symbols,
+                        count = symbols.size,
+                        exchange = exchange
                     )
                 )
             } catch (e: Exception) {
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    mapOf("error" to e.message)
+                    ErrorResponse(error = e.message ?: "Unknown error")
                 )
             }
         }

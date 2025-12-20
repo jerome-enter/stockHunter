@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import httpx
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -37,8 +38,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Kotlin 서버 URL
-KOTLIN_SERVICE_URL = "http://localhost:8080"
+# Kotlin 서버 URL (Docker 환경에서는 서비스명 사용)
+KOTLIN_SERVICE_URL = os.getenv("KOTLIN_SERVICE_URL", "http://kotlin-screener:8080")
 
 # ==================== Models ====================
 

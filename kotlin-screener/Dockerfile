@@ -14,8 +14,8 @@ RUN gradle dependencies --no-daemon
 COPY src ./src
 RUN gradle build --no-daemon -x test
 
-# 런타임 이미지
-FROM eclipse-temurin:17-jre-alpine
+# 런타임 이미지 (ARM64 호환)
+FROM amazoncorretto:17-alpine
 
 WORKDIR /app
 

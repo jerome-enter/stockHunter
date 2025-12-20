@@ -122,17 +122,17 @@ class StockScreener(
         // 4. 이동평균선 필터링
         if (condition.ma60Enabled && ma60 != null) {
             val ratio = currentPrice.toPercentage(ma60)
-            if (ratio !in condition.ma60Min..condition.ma60Max) return null
+            if (ratio !in condition.ma60Min.toDouble()..condition.ma60Max.toDouble()) return null
         }
         
         if (condition.ma112Enabled && ma112 != null) {
             val ratio = currentPrice.toPercentage(ma112)
-            if (ratio !in condition.ma112Min..condition.ma112Max) return null
+            if (ratio !in condition.ma112Min.toDouble()..condition.ma112Max.toDouble()) return null
         }
         
         if (condition.ma224Enabled && ma224 != null) {
             val ratio = currentPrice.toPercentage(ma224)
-            if (ratio !in condition.ma224Min..condition.ma224Max) return null
+            if (ratio !in condition.ma224Min.toDouble()..condition.ma224Max.toDouble()) return null
         }
         
         // 5. 이평선 정배열 체크
