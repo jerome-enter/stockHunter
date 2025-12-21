@@ -372,6 +372,26 @@
       }
     }
     
+    // 활성화된 이동평균 기간 가져오기
+    function getActiveMAPeriod() {
+      if (app.conditions.ma224Enabled) return 224;
+      if (app.conditions.ma112Enabled) return 112;
+      if (app.conditions.ma60Enabled) return 60;
+      return null;
+    }
+    
+    // 이동평균 값 가져오기
+    function getMAValue(stock, period) {
+      const value = stock[`ma${period}`];
+      return value !== undefined && value !== null ? parseFloat(value).toLocaleString() : 'N/A';
+    }
+    
+    // 이동평균 비율 가져오기
+    function getMARatio(stock, period) {
+      const ratio = stock[`ma${period}Ratio`];
+      return ratio !== undefined && ratio !== null ? ratio : 'N/A';
+    }
+    
     // 종목 마스터 파일 업로드
     async function uploadStockMasterFiles() {
       const kospiFile = document.getElementById('kospiFile').files[0];
@@ -641,16 +661,17 @@
           </div>
 
           <div class="mb-6">
-            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">이동평균선</h3>
+            <h3 class="text-base md:text-lg font-semibold text-blue-200 mb-3">이동평균선 (하나만 선택)</h3>
             <div class="space-y-3">
               ${[
-                { key: 'ma60', label: '60일' },
-                { key: 'ma112', label: '112일' },
-                { key: 'ma224', label: '224일' }
+                { key: 'ma60', label: '60일', period: 60 },
+                { key: 'ma112', label: '112일', period: 112 },
+                { key: 'ma224', label: '224일', period: 224 }
               ].map(ma => `
                 <div class="flex items-center gap-2 flex-wrap">
                   <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
-                    <input type="checkbox" id="${ma.key}Enabled" ${app.conditions[ma.key + 'Enabled'] ? 'checked' : ''} class="w-4 h-4">
+                    <input type="radio" name="maPeriod" value="${ma.period}" id="${ma.key}Enabled" 
+                      ${app.conditions[ma.key + 'Enabled'] ? 'checked' : ''} class="w-4 h-4">
                     <span>${ma.label} 이평 ±</span>
                   </label>
                   <input type="number" id="${ma.key}Min" value="${app.conditions[ma.key + 'Min']}" 
@@ -663,6 +684,9 @@
                   <span class="text-blue-300 text-sm">%</span>
                 </div>
               `).join('')}
+              <div class="text-xs text-blue-300 bg-blue-900/20 p-2 rounded mt-2">
+                💡 현재가가 선택한 이동평균선 대비 설정한 범위 내에 있는 종목을 찾습니다
+              </div>
             </div>
           </div>
 
@@ -844,8 +868,10 @@
                     <th class="px-2 py-2 text-blue-200">종목코드</th>
                     <th class="px-2 py-2 text-blue-200">현재가</th>
                     <th class="px-2 py-2 text-blue-200">등락%</th>
-                    <th class="px-2 py-2 text-blue-200">112일선</th>
-                    <th class="px-2 py-2 text-blue-200">비율</th>
+                    ${getActiveMAPeriod() ? `
+                      <th class="px-2 py-2 text-blue-200">${getActiveMAPeriod()}일선</th>
+                      <th class="px-2 py-2 text-blue-200">비율</th>
+                    ` : ''}
                   </tr>
                 </thead>
                 <tbody>
@@ -857,8 +883,10 @@
                       <td class="px-2 py-2 ${parseFloat(stock.changePercent) >= 0 ? 'text-red-400' : 'text-blue-400'} font-bold">
                         ${stock.changePercent}%
                       </td>
-                      <td class="px-2 py-2 text-white">${stock.ma112}</td>
-                      <td class="px-2 py-2 text-green-400">${stock.ma112Ratio}%</td>
+                      ${getActiveMAPeriod() ? `
+                        <td class="px-2 py-2 text-white">${getMAValue(stock, getActiveMAPeriod())}</td>
+                        <td class="px-2 py-2 text-green-400">${getMARatio(stock, getActiveMAPeriod())}%</td>
+                      ` : ''}
                     </tr>
                   `).join('')}
                 </tbody>
@@ -897,10 +925,28 @@
         });
       });
 
-      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'ma60Enabled', 'ma112Enabled', 'ma224Enabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
+      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', (e) => {
           app.conditions[id] = e.target.checked;
+          render();
+        });
+      });
+      
+      // 이동평균선 라디오 버튼
+      document.querySelectorAll('input[name="maPeriod"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          // 모든 MA 비활성화
+          app.conditions.ma60Enabled = false;
+          app.conditions.ma112Enabled = false;
+          app.conditions.ma224Enabled = false;
+          
+          // 선택된 MA만 활성화
+          const period = e.target.value;
+          if (period === '60') app.conditions.ma60Enabled = true;
+          if (period === '112') app.conditions.ma112Enabled = true;
+          if (period === '224') app.conditions.ma224Enabled = true;
+          
           render();
         });
       });
