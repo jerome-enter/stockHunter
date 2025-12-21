@@ -175,7 +175,7 @@ class KISApiClient(
                 if (it.rt_cd != "0") {
                     logger.warn { "API returned non-zero code for $stockCode: ${it.msg1}" }
                 }
-                logger.debug { "Fetched ${it.output.size} days of price data for $stockCode" }
+                logger.debug { "Fetched ${it.getData().size} days of price data for $stockCode" }
             }
             
         } catch (e: Exception) {
@@ -212,19 +212,24 @@ class KISApiClient(
                     append("appsecret", appSecret)
                     append("tr_id", trId)
                 }
-                parameter("fid_cond_mrkt_div_code", "J") // 주식시장 구분 (J: 전체)
-                parameter("fid_input_iscd", stockCode)
-                parameter("fid_input_date_1", startDate) // 시작일 YYYYMMDD
-                parameter("fid_input_date_2", endDate) // 종료일 YYYYMMDD
-                parameter("fid_period_div_code", "D") // 기간 구분 (D: 일)
-                parameter("fid_org_adj_prc", "0") // 수정주가 (0: 수정주가 반영)
+                parameter("FID_COND_MRKT_DIV_CODE", "J") // 주식시장 구분 (J: 전체)
+                parameter("FID_INPUT_ISCD", stockCode)
+                parameter("FID_INPUT_DATE_1", startDate) // 조회 시작일자 (과거)
+                parameter("FID_INPUT_DATE_2", endDate) // 조회 종료일자 (최신, 최대 100개)
+                parameter("FID_PERIOD_DIV_CODE", "D") // 기간 구분 (D: 일)
+                parameter("FID_ORG_ADJ_PRC", "0") // 수정주가 (0: 수정주가 반영)
             }
             
             return response.body<KISPriceResponse>().also {
+                val dataSize = it.getData().size
+                logger.debug { "API Response: rt_cd=${it.rt_cd}, msg1=${it.msg1}, output.size=${it.output.size}, output2.size=${it.output2.size}, actual=${dataSize}" }
                 if (it.rt_cd != "0") {
                     logger.warn { "API returned non-zero code for $stockCode: ${it.msg1}" }
                 }
-                logger.debug { "Fetched ${it.output.size} records for $stockCode" }
+                if (dataSize == 0) {
+                    logger.warn { "API returned 0 records for $stockCode: rt_cd=${it.rt_cd}, msg=${it.msg1}" }
+                }
+                logger.debug { "Fetched ${dataSize} records for $stockCode" }
             }
             
         } catch (e: Exception) {

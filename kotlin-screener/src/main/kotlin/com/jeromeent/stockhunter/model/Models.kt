@@ -170,8 +170,12 @@ data class KISPriceResponse(
     val rt_cd: String,
     val msg_cd: String,
     val msg1: String,
-    val output: List<KISPriceOutput> = emptyList()
-)
+    val output: List<KISPriceOutput> = emptyList(),
+    val output2: List<KISPriceOutput> = emptyList()  // 기간별 API용
+) {
+    // 실제 데이터는 output2가 우선, 없으면 output 사용
+    fun getData(): List<KISPriceOutput> = if (output2.isNotEmpty()) output2 else output
+}
 
 @Serializable
 data class KISPriceOutput(

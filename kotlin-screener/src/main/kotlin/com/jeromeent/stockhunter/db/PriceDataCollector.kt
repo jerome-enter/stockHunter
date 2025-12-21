@@ -114,7 +114,7 @@ class PriceDataCollector(
     /**
      * 300일 데이터 수집 (3번 API 호출)
      * 
-     * 한투 API는 한 번에 약 100일만 반환하므로, 3번 호출해서 합침:
+     * 기간별 시세 API 사용:
      * - 1차: 최근 100일
      * - 2차: 이전 100일  
      * - 3차: 이전 100일
@@ -124,19 +124,35 @@ class PriceDataCollector(
         val allData = mutableListOf<DailyPrice>()
         val seenDates = mutableSetOf<LocalDate>() // 중복 방지
         
+        val today = LocalDate.now()
+        
         // 3번 호출해서 300일 데이터 수집
         for (batch in 0 until 3) {
             try {
                 // ⚠️ Rate Limiter 대기 (67ms)
                 rateLimiter.acquire()
                 
-                // API 호출 (기본 100일씩 반환)
-                val response = kisApiClient.getDailyPrice(stockCode, days = 100)
+                // 날짜 범위 계산
+                val endDate = today.minusDays((batch * 100).toLong())
+                val startDate = endDate.minusDays(99) // 100일
                 
-                logger.debug { "[$stockCode] Batch ${batch + 1}/3: API returned ${response.output.size} records" }
+                val startDateStr = startDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+                val endDateStr = endDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+                
+                logger.debug { "[$stockCode] Batch ${batch + 1}/3: Requesting $startDateStr ~ $endDateStr (${startDate} ~ ${endDate})" }
+                
+                // 기간별 API 호출
+                val response = kisApiClient.getDailyPriceByPeriod(
+                    stockCode = stockCode,
+                    startDate = startDateStr,
+                    endDate = endDateStr
+                )
+                
+                val actualData = response.getData()
+                logger.debug { "[$stockCode] Batch ${batch + 1}/3: API returned ${actualData.size} records" }
                 
                 // 응답 데이터를 DailyPrice로 변환
-                response.output.forEach { priceData ->
+                actualData.forEach { priceData ->
                     val tradeDate = LocalDate.parse(
                         priceData.stck_bsop_date,
                         java.time.format.DateTimeFormatter.BASIC_ISO_DATE
