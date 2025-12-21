@@ -26,8 +26,8 @@ class PriceDataCollector(
     /**
      * 전체 DB 초기화 (최초 1회)
      * 
-     * 예상 시간: 500개 × 3회 × 67ms = ~2분
-     * API 호출: 1,500회 (각 종목당 3회, 300일 데이터)
+     * 예상 시간: 500개 × 4회 × 67ms = ~2분 15초
+     * API 호출: 2,000회 (각 종목당 4회, 280일 데이터)
      */
     suspend fun initializeFullDatabase(
         stockCodes: List<String>,
@@ -112,13 +112,14 @@ class PriceDataCollector(
     }
     
     /**
-     * 300일 데이터 수집 (3번 API 호출)
+     * 280일 데이터 수집 (4번 API 호출)
      * 
      * 기간별 시세 API 사용:
      * - 1차: 최근 100일
      * - 2차: 이전 100일  
      * - 3차: 이전 100일
-     * → 총 300일 확보!
+     * - 4차: 이전 100일
+     * → 총 280일 확보! (ma224 계산 가능)
      */
     private suspend fun fetch300DaysData(stockCode: String): List<DailyPrice> {
         val allData = mutableListOf<DailyPrice>()
@@ -126,8 +127,8 @@ class PriceDataCollector(
         
         val today = LocalDate.now()
         
-        // 3번 호출해서 300일 데이터 수집
-        for (batch in 0 until 3) {
+        // 4번 호출해서 280일 데이터 수집
+        for (batch in 0 until 4) {
             try {
                 // ⚠️ Rate Limiter 대기 (67ms)
                 rateLimiter.acquire()
@@ -139,7 +140,7 @@ class PriceDataCollector(
                 val startDateStr = startDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
                 val endDateStr = endDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
                 
-                logger.debug { "[$stockCode] Batch ${batch + 1}/3: Requesting $startDateStr ~ $endDateStr (${startDate} ~ ${endDate})" }
+                logger.debug { "[$stockCode] Batch ${batch + 1}/4: Requesting $startDateStr ~ $endDateStr (${startDate} ~ ${endDate})" }
                 
                 // 기간별 API 호출
                 val response = kisApiClient.getDailyPriceByPeriod(
@@ -149,7 +150,7 @@ class PriceDataCollector(
                 )
                 
                 val actualData = response.getData()
-                logger.debug { "[$stockCode] Batch ${batch + 1}/3: API returned ${actualData.size} records" }
+                logger.debug { "[$stockCode] Batch ${batch + 1}/4: API returned ${actualData.size} records" }
                 
                 // 응답 데이터를 DailyPrice로 변환
                 actualData.forEach { priceData ->
@@ -182,7 +183,7 @@ class PriceDataCollector(
                 }
                 
                 // API 부하 방지를 위한 약간의 딜레이
-                if (batch < 2) delay(50)
+                if (batch < 3) delay(50)
                 
             } catch (e: Exception) {
                 logger.error(e) { "[$stockCode] Failed to fetch batch ${batch + 1}" }

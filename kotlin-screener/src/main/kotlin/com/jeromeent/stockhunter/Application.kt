@@ -17,6 +17,7 @@ import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.http.content.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,6 +60,14 @@ data class ErrorResponse(
 )
 
 @Serializable
+data class StockMasterUploadResponse(
+    val message: String,
+    val kospiCount: Int,
+    val kosdaqCount: Int,
+    val totalCount: Int
+)
+
+@Serializable
 data class DatabaseStatusResponse(
     val initialized: Boolean,
     val totalStocks: Int,
@@ -79,6 +88,10 @@ fun main() {
 }
 
 fun Application.module() {
+    // Database 초기화 (한 번만)
+    val globalDatabase = com.jeromeent.stockhunter.db.PriceDatabase()
+    com.jeromeent.stockhunter.client.StockMasterLoader.setDatabase(globalDatabase)
+    
     // JSON 설정
     install(ContentNegotiation) {
         json(Json {
@@ -589,6 +602,71 @@ fun Route.databaseRoutes() {
                 
             } catch (e: Exception) {
                 logger.error(e) { "Failed to start update" }
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+        
+        // POST /api/v1/database/upload-stock-master - 종목 마스터 파일 업로드
+        post("/upload-stock-master") {
+            try {
+                val multipart = call.receiveMultipart()
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                
+                var kospiCount = 0
+                var kosdaqCount = 0
+                
+                multipart.forEachPart { part ->
+                    when (part) {
+                        is PartData.FileItem -> {
+                            val fileName = part.originalFileName ?: "unknown"
+                            val market = when {
+                                fileName.contains("kospi", ignoreCase = true) -> "KOSPI"
+                                fileName.contains("kosdaq", ignoreCase = true) -> "KOSDAQ"
+                                else -> "UNKNOWN"
+                            }
+                            
+                            if (market != "UNKNOWN") {
+                                val fileContent = part.streamProvider().bufferedReader().use { it.readText() }
+                                val stocks = com.jeromeent.stockhunter.client.KISStockMasterParser.parseStockMasterFile(
+                                    fileContent,
+                                    market
+                                )
+                                
+                                // DB에 저장 (List<Pair> -> Map 변환)
+                                val stocksMap = stocks.associate { it.first to it.second }
+                                database.refreshStockMaster(stocksMap)
+                                
+                                if (market == "KOSPI") {
+                                    kospiCount = stocks.size
+                                    logger.info { "✅ Uploaded KOSPI: ${stocks.size} stocks" }
+                                } else {
+                                    kosdaqCount = stocks.size
+                                    logger.info { "✅ Uploaded KOSDAQ: ${stocks.size} stocks" }
+                                }
+                            }
+                        }
+                        else -> {}
+                    }
+                    part.dispose()
+                }
+                
+                database.close()
+                
+                call.respond(
+                    HttpStatusCode.OK,
+                    StockMasterUploadResponse(
+                        message = "Stock master files uploaded successfully",
+                        kospiCount = kospiCount,
+                        kosdaqCount = kosdaqCount,
+                        totalCount = kospiCount + kosdaqCount
+                    )
+                )
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to upload stock master files" }
                 call.respond(
                     HttpStatusCode.BadRequest,
                     ErrorResponse(error = e.message ?: "Unknown error")

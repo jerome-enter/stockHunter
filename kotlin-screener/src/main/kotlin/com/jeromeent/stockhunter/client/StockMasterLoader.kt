@@ -1,5 +1,7 @@
 package com.jeromeent.stockhunter.client
 
+import com.jeromeent.stockhunter.db.PriceDatabase
+import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import java.io.File
 
@@ -8,18 +10,71 @@ private val logger = KotlinLogging.logger {}
 /**
  * 전체 종목 리스트 로더
  * 
- * CSV에서 로드하거나, 향후 KRX API 연동 가능
+ * 1순위: DB 캐시 (7일 이내)
+ * 2순위: 네이버 금융 실시간 조회 → DB 저장
+ * 3순위: CSV 파일
+ * 4순위: 기본 500개 종목
  */
 object StockMasterLoader {
+    
+    private var database: PriceDatabase? = null
+    
+    /**
+     * Database 인스턴스 설정
+     */
+    fun setDatabase(db: PriceDatabase) {
+        database = db
+    }
     
     /**
      * 전체 코스피/코스닥 종목 코드 조회
      * 
-     * CSV 파일에서 읽거나, 없으면 기본 주요 종목 반환
+     * DB 캐시 → 네이버 → CSV → 기본 리스트 순서로 시도
      */
     fun loadAllStockCodes(): List<String> {
+        // 1순위: DB 캐시 확인 (7일 이내)
+        database?.let { db ->
+            if (!db.needsStockMasterRefresh(maxAgeDays = 7)) {
+                val cachedStocks = db.getCachedStockCodes()
+                if (cachedStocks.isNotEmpty()) {
+                    val stats = db.getStockMasterStats()
+                    logger.info { "✅ Loaded ${cachedStocks.size} stocks from DB cache (KOSPI: ${stats.kospiStocks}, KOSDAQ: ${stats.kosdaqStocks})" }
+                    logger.info { "Last updated: ${stats.lastUpdated}" }
+                    return cachedStocks
+                }
+            } else {
+                logger.info { "📅 DB cache is outdated or empty, fetching fresh data..." }
+            }
+        }
+        
+        // 2순위: 네이버 금융에서 실시간 조회
+        try {
+            logger.info { "🌐 Fetching stock list from Naver Finance..." }
+            val stocksWithMarket = runBlocking {
+                fetchStocksWithMarketInfo()
+            }
+            
+            if (stocksWithMarket.isNotEmpty()) {
+                logger.info { "✅ Fetched ${stocksWithMarket.size} stocks from Naver Finance" }
+                
+                // DB에 저장
+                database?.let { db ->
+                    try {
+                        db.refreshStockMaster(stocksWithMarket)
+                        logger.info { "💾 Saved to DB cache for future use" }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to save stock master to DB" }
+                    }
+                }
+                
+                return stocksWithMarket.keys.toList()
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch from Naver, trying CSV..." }
+        }
+        
+        // 3순위: CSV에서 로드
         return try {
-            // CSV에서 로드 시도
             val csvPath = "/app/src/main/resources/all_stocks.csv"
             val file = File(csvPath)
             
@@ -33,6 +88,48 @@ object StockMasterLoader {
             logger.error(e) { "Failed to load stock list from CSV" }
             getComprehensiveDefaultStocks()
         }
+    }
+    
+    /**
+     * 종목 마스터 강제 갱신
+     * 
+     * 주기적 갱신용 (2주 또는 1달마다)
+     */
+    fun forceRefreshStockMaster(): Boolean {
+        logger.info { "🔄 Forcing stock master refresh..." }
+        
+        return try {
+            val stocksWithMarket = runBlocking {
+                fetchStocksWithMarketInfo()
+            }
+            
+            if (stocksWithMarket.isNotEmpty()) {
+                database?.refreshStockMaster(stocksWithMarket)
+                logger.info { "✅ Stock master refreshed: ${stocksWithMarket.size} stocks" }
+                true
+            } else {
+                logger.warn { "Failed to fetch stocks" }
+                false
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to refresh stock master" }
+            false
+        }
+    }
+    
+    /**
+     * 시장 정보와 함께 종목 조회
+     */
+    private suspend fun fetchStocksWithMarketInfo(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        
+        val kospiStocks = KRXStockListFetcher.fetchMarketStocksFromNaver("KOSPI")
+        val kosdaqStocks = KRXStockListFetcher.fetchMarketStocksFromNaver("KOSDAQ")
+        
+        kospiStocks.forEach { result[it] = "KOSPI" }
+        kosdaqStocks.forEach { result[it] = "KOSDAQ" }
+        
+        return result
     }
     
     /**

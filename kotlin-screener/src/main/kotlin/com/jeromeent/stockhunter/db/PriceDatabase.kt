@@ -71,6 +71,24 @@ class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.
                 )
             """.trimIndent())
             
+            // 종목 마스터 테이블 (전체 종목 리스트 캐싱)
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS stock_master (
+                    stock_code TEXT PRIMARY KEY,
+                    market TEXT NOT NULL,
+                    stock_name TEXT,
+                    is_active INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """.trimIndent())
+            
+            // 종목 마스터 인덱스
+            stmt.execute("""
+                CREATE INDEX IF NOT EXISTS idx_market_active 
+                ON stock_master(market, is_active)
+            """.trimIndent())
+            
             logger.info { "Database tables created/verified" }
         }
     }
@@ -271,6 +289,127 @@ class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.
         }
     }
     
+    // ========== 종목 마스터 관리 ==========
+    
+    /**
+     * 종목 마스터 전체 갱신
+     * 
+     * @param stocks 종목 코드와 시장 정보 맵 (종목코드 -> 시장)
+     */
+    fun refreshStockMaster(stocks: Map<String, String>) {
+        connection?.prepareStatement("BEGIN TRANSACTION")?.execute()
+        
+        try {
+            val insertSql = """
+                INSERT OR REPLACE INTO stock_master (stock_code, market, is_active, updated_at)
+                VALUES (?, ?, 1, ?)
+            """.trimIndent()
+            
+            connection?.prepareStatement(insertSql)?.use { stmt ->
+                stocks.forEach { (code, market) ->
+                    stmt.setString(1, code)
+                    stmt.setString(2, market)
+                    stmt.setString(3, LocalDateTime.now().toString())
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+            }
+            
+            // 갱신 시간 저장
+            setMetadata("stock_master_updated_at", LocalDateTime.now().toString())
+            
+            connection?.prepareStatement("COMMIT")?.execute()
+            
+            logger.info { "✅ Stock master refreshed: ${stocks.size} stocks" }
+        } catch (e: Exception) {
+            connection?.prepareStatement("ROLLBACK")?.execute()
+            logger.error(e) { "Failed to refresh stock master" }
+            throw e
+        }
+    }
+    
+    /**
+     * 캐시된 종목 리스트 조회
+     * 
+     * @return 종목 코드 리스트
+     */
+    fun getCachedStockCodes(): List<String> {
+        val sql = "SELECT stock_code FROM stock_master WHERE is_active = 1 ORDER BY stock_code"
+        
+        val result = mutableListOf<String>()
+        
+        connection?.createStatement()?.executeQuery(sql)?.use { rs ->
+            while (rs.next()) {
+                result.add(rs.getString("stock_code"))
+            }
+        }
+        
+        return result
+    }
+    
+    /**
+     * 종목 마스터 갱신 필요 여부 확인
+     * 
+     * @param maxAgeDays 최대 유효 기간 (기본 7일)
+     * @return true면 갱신 필요
+     */
+    fun needsStockMasterRefresh(maxAgeDays: Int = 7): Boolean {
+        val lastUpdated = getMetadata("stock_master_updated_at")
+        
+        if (lastUpdated == null) {
+            logger.info { "Stock master never updated, refresh needed" }
+            return true
+        }
+        
+        return try {
+            val lastUpdate = LocalDateTime.parse(lastUpdated)
+            val daysSinceUpdate = java.time.Duration.between(lastUpdate, LocalDateTime.now()).toDays()
+            
+            val needsRefresh = daysSinceUpdate >= maxAgeDays
+            
+            if (needsRefresh) {
+                logger.info { "Stock master is $daysSinceUpdate days old, refresh needed" }
+            }
+            
+            needsRefresh
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to parse last update time" }
+            true
+        }
+    }
+    
+    /**
+     * 종목 마스터 통계
+     */
+    fun getStockMasterStats(): StockMasterStats {
+        val totalCount = connection?.createStatement()?.executeQuery(
+            "SELECT COUNT(*) as cnt FROM stock_master WHERE is_active = 1"
+        )?.use { if (it.next()) it.getInt("cnt") else 0 } ?: 0
+        
+        val kospiCount = connection?.createStatement()?.executeQuery(
+            "SELECT COUNT(*) as cnt FROM stock_master WHERE is_active = 1 AND market = 'KOSPI'"
+        )?.use { if (it.next()) it.getInt("cnt") else 0 } ?: 0
+        
+        val kosdaqCount = connection?.createStatement()?.executeQuery(
+            "SELECT COUNT(*) as cnt FROM stock_master WHERE is_active = 1 AND market = 'KOSDAQ'"
+        )?.use { if (it.next()) it.getInt("cnt") else 0 } ?: 0
+        
+        val lastUpdated = getMetadata("stock_master_updated_at")?.let {
+            try {
+                LocalDateTime.parse(it)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        return StockMasterStats(
+            totalStocks = totalCount,
+            kospiStocks = kospiCount,
+            kosdaqStocks = kosdaqCount,
+            lastUpdated = lastUpdated
+        )
+    }
+    
     fun close() {
         connection?.close()
         logger.info { "Database connection closed" }
@@ -287,6 +426,16 @@ data class DailyPrice(
     val low: Double,
     val close: Double,
     val volume: Long
+)
+
+/**
+ * 종목 마스터 통계
+ */
+data class StockMasterStats(
+    val totalStocks: Int,
+    val kospiStocks: Int,
+    val kosdaqStocks: Int,
+    val lastUpdated: LocalDateTime?
 )
 
 /**
