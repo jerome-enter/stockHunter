@@ -19,6 +19,8 @@
     const app = {
       selectedMarket: 'domestic',  // domestic or us
       isProduction: false,  // 실전투자 여부
+      searchDomestic: true,   // 국내주식 검색 여부
+      searchUS: false,        // 해외주식 검색 여부
       conditions: {
         market: 'domestic',
         exchangeCode: 'KRX',  // KRX(국내), NAS(나스닥), NYS(뉴욕)
@@ -168,17 +170,32 @@
         <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 md:p-6 mb-6 border border-white/20">
           <h2 class="text-lg md:text-xl font-bold text-white mb-4">🔑 한국투자증권 API 설정</h2>
           
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-blue-200 mb-2">계좌 구분</label>
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 text-white cursor-pointer">
-                <input type="radio" name="accountType" value="mock" ${!app.isProduction ? 'checked' : ''} class="w-4 h-4">
-                <span>모의투자</span>
-              </label>
-              <label class="flex items-center gap-2 text-white cursor-pointer">
-                <input type="radio" name="accountType" value="real" ${app.isProduction ? 'checked' : ''} class="w-4 h-4">
-                <span class="text-yellow-300">⚠️ 실전투자</span>
-              </label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-sm font-medium text-blue-200 mb-2">계좌 구분</label>
+              <div class="flex gap-4">
+                <label class="flex items-center gap-2 text-white cursor-pointer">
+                  <input type="radio" name="accountType" value="mock" ${!app.isProduction ? 'checked' : ''} class="w-4 h-4">
+                  <span>모의투자</span>
+                </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer">
+                  <input type="radio" name="accountType" value="real" ${app.isProduction ? 'checked' : ''} class="w-4 h-4">
+                  <span class="text-yellow-300">⚠️ 실전투자</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-blue-200 mb-2">시장 선택</label>
+              <div class="flex gap-4">
+                <label class="flex items-center gap-2 text-white cursor-pointer">
+                  <input type="checkbox" id="searchDomestic" ${app.searchDomestic ? 'checked' : ''} class="w-4 h-4">
+                  <span>🇰🇷 국내주식</span>
+                </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer">
+                  <input type="checkbox" id="searchUS" ${app.searchUS ? 'checked' : ''} class="w-4 h-4">
+                  <span>🇺🇸 해외주식</span>
+                </label>
+              </div>
             </div>
           </div>
           
@@ -461,6 +478,15 @@
         radio.addEventListener('change', (e) => {
           app.isProduction = e.target.value === 'real';
           console.log('계좌 구분 변경:', app.isProduction ? '실전투자' : '모의투자');
+        });
+      });
+      
+      // 시장 선택 체크박스
+      ['searchDomestic', 'searchUS'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', (e) => {
+          app[id] = e.target.checked;
+          console.log('시장 선택:', id, app[id]);
         });
       });
 

@@ -125,17 +125,20 @@ class StockScreener(
         val ma224 = TechnicalIndicators.calculateSMA(prices, 224)
         
         // 4. 이동평균선 필터링
-        if (condition.ma60Enabled && ma60 != null) {
+        if (condition.ma60Enabled) {
+            if (ma60 == null) return null  // 데이터 부족 시 제외
             val ratio = currentPrice.toPercentage(ma60)
             if (ratio !in condition.ma60Min.toDouble()..condition.ma60Max.toDouble()) return null
         }
         
-        if (condition.ma112Enabled && ma112 != null) {
+        if (condition.ma112Enabled) {
+            if (ma112 == null) return null  // 데이터 부족 시 제외
             val ratio = currentPrice.toPercentage(ma112)
             if (ratio !in condition.ma112Min.toDouble()..condition.ma112Max.toDouble()) return null
         }
         
-        if (condition.ma224Enabled && ma224 != null) {
+        if (condition.ma224Enabled) {
+            if (ma224 == null) return null  // 데이터 부족 시 제외
             val ratio = currentPrice.toPercentage(ma224)
             if (ratio !in condition.ma224Min.toDouble()..condition.ma224Max.toDouble()) return null
         }

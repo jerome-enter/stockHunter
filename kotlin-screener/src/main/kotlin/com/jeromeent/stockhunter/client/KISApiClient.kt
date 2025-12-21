@@ -14,6 +14,8 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import java.time.Instant
@@ -47,6 +49,7 @@ class KISApiClient(
     // Access Token 캐시
     private var cachedToken: String? = null
     private var tokenExpireTime: Instant? = null
+    private val tokenMutex = Mutex()  // Race Condition 방지
     
     // HTTP 클라이언트
     private val httpClient = HttpClient(CIO) {
@@ -81,8 +84,11 @@ class KISApiClient(
      * - 토큰 유효기간: 24시간
      * - 1일 1회 발급 권장
      * - 파일 캐시를 통해 서버 재시작 시에도 토큰 재사용
+     * 
+     * Race Condition 방지:
+     * - Mutex로 동시 요청 시 중복 발급 방지
      */
-    suspend fun getAccessToken(): String {
+    suspend fun getAccessToken(): String = tokenMutex.withLock {
         // 1. 메모리 캐시 확인 (빠른 재사용)
         if (cachedToken != null && tokenExpireTime != null) {
             if (Instant.now().isBefore(tokenExpireTime!!.minusSeconds(300))) {

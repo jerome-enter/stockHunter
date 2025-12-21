@@ -12,6 +12,8 @@ import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import java.time.Instant
@@ -35,6 +37,7 @@ class KISUSApiClient(
     private val rateLimiter = RateLimiter.create(20.0)
     private var cachedToken: String? = null
     private var tokenExpireTime: Instant? = null
+    private val tokenMutex = Mutex()  // 동시 토큰 발급 방지
     
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -56,11 +59,13 @@ class KISUSApiClient(
     /**
      * Access Token 발급 (국내와 동일)
      * 파일 캐시를 통해 토큰 재사용
+     * Mutex로 동시 토큰 발급 방지
      */
-    suspend fun getAccessToken(): String {
+    suspend fun getAccessToken(): String = tokenMutex.withLock {
         // 1. 메모리 캐시 확인
         if (cachedToken != null && tokenExpireTime != null) {
             if (Instant.now().isBefore(tokenExpireTime!!.minusSeconds(300))) {
+                logger.debug { "✅ Reusing memory cached US token" }
                 return cachedToken!!
             }
         }
@@ -70,12 +75,13 @@ class KISUSApiClient(
         if (cachedFromFile != null) {
             cachedToken = cachedFromFile
             tokenExpireTime = Instant.now().plus(24, java.time.temporal.ChronoUnit.HOURS)
-            logger.info { "✅ Reusing cached US stocks token from file" }
+            logger.info { "✅ Reusing cached US stocks token from file (no API call)" }
             return cachedFromFile
         }
         
         // 3. 새 토큰 발급
         logger.info { "⚠️ Requesting new access token for US stocks..." }
+        logger.warn { "한국투자증권 API 정책: 1일 1회 토큰 발급 권장" }
         
         try {
             val response = httpClient.post("$baseUrl/oauth2/tokenP") {
@@ -94,7 +100,7 @@ class KISUSApiClient(
             // 파일에 캐시
             TokenCache.saveToken(appKey, tokenResponse.access_token, tokenResponse.expires_in, isProduction)
             
-            logger.info { "✅ US stocks access token acquired and cached" }
+            logger.info { "✅ US stocks access token acquired and cached (~${tokenResponse.expires_in/3600}h)" }
             return cachedToken!!
             
         } catch (e: Exception) {
