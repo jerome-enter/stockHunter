@@ -230,26 +230,48 @@ class PriceDataCollector(
                 // ⚠️ Rate Limiter 대기
                 rateLimiter.acquire()
                 
-                // 최신 1일 데이터만 가져오기
-                val response = kisApiClient.getDailyPrice(stockCode, days = 1)
+                // DB에서 마지막 날짜 확인
+                val latestDate = database.getLatestDate(stockCode)
+                val daysSinceLastUpdate = if (latestDate != null) {
+                    java.time.temporal.ChronoUnit.DAYS.between(latestDate, today).toInt()
+                } else {
+                    1  // 데이터 없으면 1일만
+                }
+                
+                // 누락된 기간만큼 가져오기 (최대 100일)
+                val daysToFetch = minOf(daysSinceLastUpdate + 1, 100)
+                
+                logger.debug { "[$stockCode] Latest: $latestDate, fetching $daysToFetch days" }
+                
+                val response = kisApiClient.getDailyPrice(stockCode, days = daysToFetch)
                 
                 if (response.output.isNotEmpty()) {
-                    val latestData = response.output.first()
-                    val tradeDate = LocalDate.parse(
-                        latestData.stck_bsop_date,
-                        java.time.format.DateTimeFormatter.BASIC_ISO_DATE
-                    )
-                    val dailyPrice = DailyPrice(
-                        date = tradeDate,
-                        open = latestData.stck_oprc.toDoubleOrNull() ?: 0.0,
-                        high = latestData.stck_hgpr.toDoubleOrNull() ?: 0.0,
-                        low = latestData.stck_lwpr.toDoubleOrNull() ?: 0.0,
-                        close = latestData.stck_clpr.toDoubleOrNull() ?: 0.0,
-                        volume = latestData.acml_vol.toLongOrNull() ?: 0L
-                    )
+                    // 모든 데이터를 DailyPrice로 변환
+                    val priceData = response.output.map { data ->
+                        val tradeDate = LocalDate.parse(
+                            data.stck_bsop_date,
+                            java.time.format.DateTimeFormatter.BASIC_ISO_DATE
+                        )
+                        DailyPrice(
+                            date = tradeDate,
+                            open = data.stck_oprc.toDoubleOrNull() ?: 0.0,
+                            high = data.stck_hgpr.toDoubleOrNull() ?: 0.0,
+                            low = data.stck_lwpr.toDoubleOrNull() ?: 0.0,
+                            close = data.stck_clpr.toDoubleOrNull() ?: 0.0,
+                            volume = data.acml_vol.toLongOrNull() ?: 0L
+                        )
+                    }.filter { price ->
+                        // 기존 데이터보다 새로운 것만 저장
+                        latestDate == null || price.date > latestDate
+                    }
                     
-                    database.savePriceBatch(stockCode, listOf(dailyPrice))
-                    successCount++
+                    if (priceData.isNotEmpty()) {
+                        database.savePriceBatch(stockCode, priceData)
+                        logger.debug { "[$stockCode] Updated ${priceData.size} new records" }
+                        successCount++
+                    } else {
+                        logger.debug { "[$stockCode] No new data to add" }
+                    }
                 } else {
                     logger.warn { "[$stockCode] No data returned" }
                     failureCount++

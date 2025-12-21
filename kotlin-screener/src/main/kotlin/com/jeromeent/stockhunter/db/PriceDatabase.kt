@@ -1,5 +1,6 @@
 package com.jeromeent.stockhunter.db
 
+import kotlinx.serialization.Serializable
 import mu.KotlinLogging
 import java.sql.Connection
 import java.sql.DriverManager
@@ -394,13 +395,7 @@ class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.
             "SELECT COUNT(*) as cnt FROM stock_master WHERE is_active = 1 AND market = 'KOSDAQ'"
         )?.use { if (it.next()) it.getInt("cnt") else 0 } ?: 0
         
-        val lastUpdated = getMetadata("stock_master_updated_at")?.let {
-            try {
-                LocalDateTime.parse(it)
-            } catch (e: Exception) {
-                null
-            }
-        }
+        val lastUpdated = getMetadata("stock_master_updated_at")
         
         return StockMasterStats(
             totalStocks = totalCount,
@@ -431,11 +426,12 @@ data class DailyPrice(
 /**
  * 종목 마스터 통계
  */
+@Serializable
 data class StockMasterStats(
     val totalStocks: Int,
     val kospiStocks: Int,
     val kosdaqStocks: Int,
-    val lastUpdated: LocalDateTime?
+    val lastUpdated: String?
 )
 
 /**

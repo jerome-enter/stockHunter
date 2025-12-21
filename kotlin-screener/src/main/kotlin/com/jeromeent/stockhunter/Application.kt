@@ -426,6 +426,23 @@ fun Route.databaseRoutes() {
             }
         }
         
+        // GET /api/v1/database/stock-master/stats - 종목 마스터 통계
+        get("/stock-master/stats") {
+            try {
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                val stats = database.getStockMasterStats()
+                database.close()
+                
+                call.respond(HttpStatusCode.OK, stats)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to get stock master stats" }
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+        
         // GET /api/v1/database/status - DB 상태 조회
         get("/status") {
             try {
