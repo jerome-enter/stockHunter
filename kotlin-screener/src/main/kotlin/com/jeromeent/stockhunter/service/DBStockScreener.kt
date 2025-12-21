@@ -53,6 +53,15 @@ class DBStockScreener(
             }
             .awaitAll()
             .flatten()
+            .sortedByDescending { stock ->
+                // 활성화된 MA 비율 기준으로 정렬 (높은 순)
+                when {
+                    condition.ma224Enabled -> stock.ma224Ratio
+                    condition.ma112Enabled -> stock.ma112Ratio
+                    condition.ma60Enabled -> stock.ma60Ratio
+                    else -> null
+                } ?: 0.0
+            }
         
         val elapsedTimeMs = System.currentTimeMillis() - startTime
         
@@ -82,8 +91,8 @@ class DBStockScreener(
             return null
         }
         
-        // 2. 종목명 가져오기 (DB 또는 API)
-        val stockName = try {
+        // 2. 종목명 가져오기 (DB 우선, 실패 시 API)
+        val stockName = database.getStockName(code) ?: try {
             kisApiClient.getStockName(code)
         } catch (e: Exception) {
             code  // 실패 시 종목코드 사용

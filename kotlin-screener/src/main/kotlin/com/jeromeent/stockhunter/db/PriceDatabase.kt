@@ -185,6 +185,20 @@ class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.
     }
     
     /**
+     * 종목명 조회
+     */
+    fun getStockName(stockCode: String): String? {
+        val sql = "SELECT stock_name FROM stock_master WHERE stock_code = ? AND is_active = 1"
+        
+        return connection?.prepareStatement(sql)?.use { stmt ->
+            stmt.setString(1, stockCode)
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) rs.getString("stock_name") else null
+            }
+        }
+    }
+    
+    /**
      * DB에 저장된 모든 종목코드 조회
      */
     fun getAllStockCodes(): List<String> {

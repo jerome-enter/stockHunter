@@ -859,7 +859,12 @@
 
         ${app.results.length > 0 ? `
           <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 md:p-6 border border-white/20">
-            <h2 class="text-lg md:text-xl font-bold text-white mb-4">✅ 검색 결과 (${app.results.length}개)</h2>
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-lg md:text-xl font-bold text-white">✅ 검색 결과 (${app.results.length}개)</h2>
+              <div class="text-xs text-blue-300">
+                💡 비율: 현재가가 이평선보다 얼마나 높은지 (100% = 일치, 105% = 5% 위)
+              </div>
+            </div>
             <div class="overflow-x-auto">
               <table class="w-full text-left text-xs md:text-sm">
                 <thead>
