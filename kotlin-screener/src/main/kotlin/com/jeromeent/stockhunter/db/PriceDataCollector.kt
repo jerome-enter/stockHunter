@@ -103,6 +103,10 @@ class PriceDataCollector(
         logger.info { "Failed: $failureCount" }
         logger.info { "Total time: ${totalTime}s (${totalTime / 60}m ${totalTime % 60}s)" }
         
+        // 오래된 데이터 자동 정리 (280일 이전)
+        logger.info { "🧹 Cleaning old data (keeping 280 days)..." }
+        database.cleanOldData(keepDays = 280)
+        
         // 진행 상태 완료
         InitializationProgress.complete()
         
@@ -297,6 +301,10 @@ class PriceDataCollector(
         logger.info { "Success: $successCount / ${allStockCodes.size}" }
         logger.info { "Failed: $failureCount" }
         logger.info { "Total time: ${totalTime}s" }
+        
+        // 오래된 데이터 자동 정리 (280일 이전)
+        logger.info { "🧹 Cleaning old data (keeping 280 days)..." }
+        database.cleanOldData(keepDays = 280)
         
         // 진행 상태 완료
         InitializationProgress.complete()

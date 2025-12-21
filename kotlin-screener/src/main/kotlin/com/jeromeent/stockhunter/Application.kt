@@ -246,25 +246,40 @@ fun Route.tokenDebugRoutes() {
 fun Route.domesticScreeningRoutes() {
     route("/api/v1") {
         
-        // POST /api/v1/screen - 스크리닝 실행
+        // POST /api/v1/screen - 스크리닝 실행 (DB 기반)
         post("/screen") {
             try {
                 val condition = call.receive<ScreeningCondition>()
                 
-                logger.info { "Received screening request: ${condition.targetCodes.size} targets" }
+                logger.info { "Received screening request (DB-based)" }
                 
-                // API 클라이언트 생성
+                // DB 초기화
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                
+                // DB가 비어있으면 에러
+                val stats = database.getStatistics()
+                if (stats.totalStocks == 0) {
+                    database.close()
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ErrorResponse(error = "Database not initialized. Please initialize the database first.")
+                    )
+                    return@post
+                }
+                
+                // API 클라이언트 생성 (기본정보 조회용)
                 val kisClient = KISApiClient(
                     appKey = condition.appKey,
                     appSecret = condition.appSecret,
-                    isProduction = condition.isProduction  // 사용자가 선택한 환경
+                    isProduction = condition.isProduction
                 )
                 
-                // 스크리너 실행
-                val screener = StockScreener(kisClient)
+                // DB 기반 스크리너 실행
+                val screener = com.jeromeent.stockhunter.service.DBStockScreener(database, kisClient)
                 val result = screener.screen(condition)
                 
                 // 리소스 정리
+                database.close()
                 kisClient.close()
                 
                 logger.info { "Screening completed: ${result.matchedCount} matches" }
@@ -275,7 +290,7 @@ fun Route.domesticScreeningRoutes() {
                 logger.error(e) { "Screening failed: ${e.message}" }
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    mapOf("error" to (e.message ?: "Screening failed"))
+                    ErrorResponse(error = e.message ?: "Screening failed")
                 )
             }
         }
