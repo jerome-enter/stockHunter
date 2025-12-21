@@ -17,6 +17,9 @@ import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -53,6 +56,17 @@ data class ValidationResponse(
 @Serializable
 data class ErrorResponse(
     val error: String
+)
+
+@Serializable
+data class DatabaseStatusResponse(
+    val initialized: Boolean,
+    val totalStocks: Int,
+    val totalRecords: Int,
+    val oldestDate: String?,
+    val newestDate: String?,
+    val lastInit: String?,
+    val lastUpdate: String?
 )
 
 fun main() {
@@ -101,6 +115,7 @@ fun Application.module() {
     // 라우팅
     routing {
         healthCheck()
+        databaseRoutes()            // DB 초기화 및 관리
         tokenDebugRoutes()          // 토큰 디버그 (개발용)
         domesticScreeningRoutes()  // 기존 국내주식
         usScreeningRoutes()         // 신규 미국주식
@@ -369,6 +384,211 @@ fun Route.usScreeningRoutes() {
                     )
                 )
             } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 데이터베이스 관리 라우트
+ */
+fun Route.databaseRoutes() {
+    route("/api/v1/database") {
+        
+        // GET /api/v1/database/progress - 초기화 진행률 조회
+        get("/progress") {
+            try {
+                val progress = com.jeromeent.stockhunter.db.InitializationProgress.getStatus()
+                call.respond(HttpStatusCode.OK, progress)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to get progress" }
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+        
+        // GET /api/v1/database/status - DB 상태 조회
+        get("/status") {
+            try {
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                val stats = database.getStatistics()
+                
+                val isInitialized = stats.totalStocks > 0
+                val lastUpdate = database.getMetadata("last_daily_update")
+                val lastInit = database.getMetadata("last_full_init")
+                
+                call.respond(
+                    HttpStatusCode.OK,
+                    DatabaseStatusResponse(
+                        initialized = isInitialized,
+                        totalStocks = stats.totalStocks,
+                        totalRecords = stats.totalRecords,
+                        oldestDate = stats.oldestDate?.toString(),
+                        newestDate = stats.newestDate?.toString(),
+                        lastInit = lastInit,
+                        lastUpdate = lastUpdate
+                    )
+                )
+                
+                database.close()
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to get DB status" }
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+        
+        // POST /api/v1/database/initialize - DB 초기화 시작
+        post("/initialize") {
+            try {
+                @Serializable
+                data class InitRequest(
+                    val appKey: String,
+                    val appSecret: String,
+                    val isProduction: Boolean = false,
+                    val forceRebuild: Boolean = false  // 강제 재구축 플래그
+                )
+                
+                val request = call.receive<InitRequest>()
+                
+                // ⚠️ 중복 구축 방지: 이미 초기화되었는지 확인
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                val stats = database.getStatistics()
+                val lastInit = database.getMetadata("last_full_init")
+                database.close()
+                
+                if (stats.totalStocks > 0 && !request.forceRebuild) {
+                    logger.warn { "⚠️ Database already initialized with ${stats.totalStocks} stocks" }
+                    logger.warn { "Last initialized: $lastInit" }
+                    
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        mapOf(
+                            "error" to "Database already initialized",
+                            "totalStocks" to stats.totalStocks,
+                            "lastInit" to lastInit,
+                            "message" to "Use forceRebuild=true to rebuild, or use /update endpoint for daily updates"
+                        )
+                    )
+                    return@post
+                }
+                
+                if (request.forceRebuild) {
+                    logger.warn { "⚠️ Force rebuild requested - existing data will be kept and updated" }
+                }
+                
+                logger.info { "🚀 Starting database initialization..." }
+                
+                // 비동기로 초기화 시작  
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                        val kisClient = KISApiClient(
+                            appKey = request.appKey,
+                            appSecret = request.appSecret,
+                            isProduction = request.isProduction
+                        )
+                        
+                        val collector = com.jeromeent.stockhunter.db.PriceDataCollector(
+                            kisApiClient = kisClient,
+                            database = database
+                        )
+                        
+                        // 전체 종목 로드
+                        val stockCodes = com.jeromeent.stockhunter.client.StockMasterLoader.loadAllStockCodes()
+                        
+                        logger.info { "Loading ${stockCodes.size} stocks into database..." }
+                        
+                        // 초기화 실행 (2~3분 소요)
+                        collector.initializeFullDatabase(
+                            stockCodes = stockCodes,
+                            forceRebuild = request.forceRebuild
+                        )
+                        
+                        database.close()
+                        kisClient.close()
+                        
+                        logger.info { "✅ Database initialization completed!" }
+                        
+                    } catch (e: Exception) {
+                        logger.error(e) { "❌ Database initialization failed" }
+                    }
+                }
+                
+                call.respond(
+                    HttpStatusCode.Accepted,
+                    mapOf(
+                        "message" to "Database initialization started",
+                        "estimatedTime" to "15-20 minutes"
+                    )
+                )
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to start initialization" }
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = e.message ?: "Unknown error")
+                )
+            }
+        }
+        
+        // POST /api/v1/database/update - 일일 업데이트
+        post("/update") {
+            try {
+                @Serializable
+                data class UpdateRequest(
+                    val appKey: String,
+                    val appSecret: String,
+                    val isProduction: Boolean = false
+                )
+                
+                val request = call.receive<UpdateRequest>()
+                
+                logger.info { "📅 Starting daily update..." }
+                
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                        
+                        val kisClient = KISApiClient(
+                            appKey = request.appKey,
+                            appSecret = request.appSecret,
+                            isProduction = request.isProduction
+                        )
+                        
+                        val collector = com.jeromeent.stockhunter.db.PriceDataCollector(
+                            kisApiClient = kisClient,
+                            database = database
+                        )
+                        
+                        // 일일 업데이트 실행 (진행률 표시)
+                        collector.updateDailyData()
+                        
+                        database.close()
+                        kisClient.close()
+                        
+                        logger.info { "✅ Daily update completed!" }
+                        
+                    } catch (e: Exception) {
+                        logger.error(e) { "❌ Daily update failed" }
+                    }
+                }
+                
+                call.respond(
+                    HttpStatusCode.Accepted,
+                    mapOf("message" to "Daily update started")
+                )
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to start update" }
                 call.respond(
                     HttpStatusCode.BadRequest,
                     ErrorResponse(error = e.message ?: "Unknown error")

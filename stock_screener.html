@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>주식단타 최강안정화 검색기</title>
+  <title>제롬과 함께하는 행복 주식 검색기</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
@@ -14,6 +14,46 @@
 </head>
 <body class="p-4 md:p-6">
   <div id="app" class="max-w-7xl mx-auto"></div>
+  
+  <!-- 진행률 모달 -->
+  <div id="progressModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/20 rounded-2xl p-8 max-w-md w-full mx-4">
+      <h3 class="text-2xl font-bold text-white mb-6">📊 DB 초기화 중...</h3>
+      
+      <div class="mb-4">
+        <div class="flex justify-between text-white mb-2">
+          <span id="progressText">준비 중...</span>
+          <span id="progressPercent">0%</span>
+        </div>
+        <div class="w-full bg-slate-700 rounded-full h-4 overflow-hidden">
+          <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+      
+      <div class="text-sm text-white/70 space-y-2">
+        <div class="flex justify-between">
+          <span>처리 중:</span>
+          <span id="progressCount">0 / 0</span>
+        </div>
+        <div class="flex justify-between">
+          <span>현재 종목:</span>
+          <span id="progressStock" class="font-mono">-</span>
+        </div>
+        <div class="flex justify-between">
+          <span>경과 시간:</span>
+          <span id="progressElapsed">0초</span>
+        </div>
+        <div class="flex justify-between">
+          <span>남은 시간:</span>
+          <span id="progressRemaining">계산 중...</span>
+        </div>
+      </div>
+      
+      <div class="mt-6 text-xs text-white/50 text-center">
+        ⚠️ 한국투자증권 API 제약 준수 중 (초당 15건)
+      </div>
+    </div>
+  </div>
 
   <script>
     const app = {
@@ -68,6 +108,248 @@
 
     // FastAPI 백엔드 URL (같은 서버 사용)
     const API_BASE_URL = window.location.origin;
+    
+    let progressCheckInterval = null;
+
+    // 진행률 모달 표시/숨김
+    function showProgressModal() {
+      document.getElementById('progressModal').classList.remove('hidden');
+      startProgressCheck();
+    }
+    
+    function hideProgressModal() {
+      document.getElementById('progressModal').classList.add('hidden');
+      stopProgressCheck();
+    }
+    
+    // 진행률 폴링 시작
+    function startProgressCheck() {
+      progressCheckInterval = setInterval(updateProgress, 1000); // 1초마다
+      updateProgress(); // 즉시 한 번 실행
+    }
+    
+    // 진행률 폴링 중지
+    function stopProgressCheck() {
+      if (progressCheckInterval) {
+        clearInterval(progressCheckInterval);
+        progressCheckInterval = null;
+      }
+    }
+    
+    // 진행률 업데이트
+    async function updateProgress() {
+      try {
+        const response = await fetch('http://localhost:8080/api/v1/database/progress');
+        const progress = await response.json();
+        
+        document.getElementById('progressPercent').textContent = progress.percentage + '%';
+        document.getElementById('progressBar').style.width = progress.percentage + '%';
+        document.getElementById('progressCount').textContent = 
+          `${progress.currentCount} / ${progress.totalCount}`;
+        document.getElementById('progressStock').textContent = 
+          progress.currentStock || '-';
+        document.getElementById('progressElapsed').textContent = 
+          formatSeconds(progress.elapsedSeconds);
+        document.getElementById('progressRemaining').textContent = 
+          progress.remainingSeconds > 0 ? formatSeconds(progress.remainingSeconds) : '계산 중...';
+        
+        if (progress.percentage > 0) {
+          document.getElementById('progressText').textContent = '초기화 중...';
+        }
+        
+        // 완료 시 모달 닫기 및 DB 상태 갱신
+        if (!progress.isRunning && progress.currentCount > 0) {
+          setTimeout(() => {
+            hideProgressModal();
+            // DB 상태 자동 갱신
+            checkDatabaseStatus();
+            alert('✅ DB 초기화 완료!\n이제 스크리닝을 실행하세요.');
+          }, 1000);
+        }
+      } catch (err) {
+        console.error('진행률 조회 실패:', err);
+      }
+    }
+    
+    // 초 → "분 초" 형식 변환
+    function formatSeconds(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      return min > 0 ? `${min}분 ${sec}초` : `${sec}초`;
+    }
+    
+    // 진행률 폴링 시작
+    function startProgressPolling() {
+      if (progressCheckInterval) {
+        clearInterval(progressCheckInterval);
+      }
+      progressCheckInterval = setInterval(updateProgress, 1000);
+      updateProgress(); // 즉시 한 번 실행
+    }
+    
+    // DB 상태 확인 및 버튼 표시
+    async function checkDatabaseStatus() {
+      try {
+        const response = await fetch('http://localhost:8080/api/v1/database/status');
+        const status = await response.json();
+        
+        const initBtn = document.getElementById('dbInitBtn');
+        const rebuildBtn = document.getElementById('dbRebuildBtn');
+        const updateBtn = document.getElementById('dbUpdateBtn');
+        const statusText = document.getElementById('dbStatusText');
+        
+        if (!status.initialized || status.totalStocks === 0) {
+          // DB 없음 → 초기화 버튼만 표시
+          initBtn.classList.remove('hidden');
+          rebuildBtn.classList.add('hidden');
+          updateBtn.classList.add('hidden');
+          statusText.innerHTML = '❌ DB 미구축 (초기화 필요)';
+        } else {
+          // DB 있음 → 재구축 + 업데이트 버튼 표시
+          initBtn.classList.add('hidden');
+          rebuildBtn.classList.remove('hidden');
+          updateBtn.classList.remove('hidden');
+          
+          const today = new Date().toISOString().split('T')[0];
+          const isUpToDate = status.newestDate === today;
+          
+          if (isUpToDate) {
+            // 최신 상태
+            updateBtn.disabled = true;
+            updateBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            updateBtn.classList.add('bg-gray-600', 'cursor-not-allowed');
+            statusText.innerHTML = `✅ 최신 DB 상태 (${status.totalStocks}개 종목, ${status.newestDate})`;
+          } else {
+            // 업데이트 필요
+            updateBtn.disabled = false;
+            updateBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+            updateBtn.classList.remove('bg-gray-600', 'cursor-not-allowed');
+            statusText.innerHTML = `⚠️ 업데이트 필요 (${status.totalStocks}개 종목, 최종: ${status.newestDate})`;
+          }
+        }
+      } catch (err) {
+        console.error('DB 상태 확인 실패:', err);
+        document.getElementById('dbStatusText').innerHTML = '⚠️ 상태 확인 실패';
+      }
+    }
+    
+    // DB 초기화
+    async function initializeDatabase() {
+      if (!app.appKey || !app.appSecret) {
+        alert('❌ API KEY와 SECRET을 먼저 입력해주세요!');
+        return;
+      }
+      
+      if (!confirm('DB 초기화를 시작합니다.\n약 2분 소요됩니다. 계속하시겠습니까?')) {
+        return;
+      }
+      
+      try {
+        showProgressModal();
+        
+        const response = await fetch('http://localhost:8080/api/v1/database/initialize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appKey: app.appKey,
+            appSecret: app.appSecret,
+            isProduction: app.isProduction
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (response.status === 409) {
+          // 이미 초기화됨
+          alert('ℹ️ ' + result.message + '\n\n' + result.error);
+          hideProgressModal();
+          checkDatabaseStatus();
+        } else if (response.ok) {
+          // 진행률 체크 시작
+          startProgressPolling();
+        } else {
+          throw new Error(result.error || 'DB 초기화 실패');
+        }
+      } catch (err) {
+        alert('❌ 오류: ' + err.message);
+        hideProgressModal();
+      }
+    }
+    
+    // DB 재구축 (강제)
+    async function rebuildDatabase() {
+      if (!app.appKey || !app.appSecret) {
+        alert('❌ API KEY와 SECRET을 먼저 입력해주세요!');
+        return;
+      }
+      
+      if (!confirm('⚠️ DB를 완전히 재구축합니다.\n\n기존 데이터가 삭제되고 처음부터 다시 수집합니다.\n약 2~3분 소요됩니다.\n\n계속하시겠습니까?')) {
+        return;
+      }
+      
+      try {
+        showProgressModal();
+        
+        const response = await fetch('http://localhost:8080/api/v1/database/initialize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appKey: app.appKey,
+            appSecret: app.appSecret,
+            isProduction: app.isProduction,
+            forceRebuild: true  // 강제 재구축!
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(result.error || '재구축 실패');
+        }
+        
+        // 진행률 체크 시작
+        startProgressPolling();
+        
+      } catch (err) {
+        alert('❌ 재구축 실패: ' + err.message);
+        hideProgressModal();
+      }
+    }
+    
+    // DB 업데이트
+    async function updateDatabase() {
+      if (!app.appKey || !app.appSecret) {
+        alert('❌ API KEY와 SECRET을 먼저 입력해주세요!');
+        return;
+      }
+      
+      if (!confirm('DB 업데이트를 시작합니다.\n약 30초 소요됩니다. 계속하시겠습니까?')) {
+        return;
+      }
+      
+      try {
+        showProgressModal();
+        
+        const response = await fetch('http://localhost:8080/api/v1/database/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appKey: app.appKey,
+            appSecret: app.appSecret,
+            isProduction: app.isProduction
+          })
+        });
+        
+        const result = await response.json();
+        
+        // 진행률 체크 시작
+        startProgressPolling();
+        
+      } catch (err) {
+        alert('❌ 업데이트 실패: ' + err.message);
+        hideProgressModal();
+      }
+    }
 
     async function validateCredentials() {
       try {
@@ -211,8 +493,32 @@
                 class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
           </div>
-          <div class="text-sm text-blue-200 bg-blue-900/30 p-3 rounded-lg">
+          <div class="text-sm text-blue-200 bg-blue-900/30 p-3 rounded-lg mb-4">
             <strong>API 키 발급:</strong> 한국투자증권 홈페이지 → KIS Developers → 앱 등록
+          </div>
+          
+          <!-- DB 관리 영역 -->
+          <div id="dbManagement" class="border-t border-white/20 pt-4">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+              <div class="flex-1">
+                <div class="text-sm font-medium text-blue-200">📊 데이터베이스 상태</div>
+                <div id="dbStatusText" class="text-xs text-white/70 mt-1">확인 중...</div>
+              </div>
+              <div class="flex gap-2">
+                <button id="dbInitBtn" onclick="initializeDatabase()" 
+                  class="hidden px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                  🚀 DB 초기화
+                </button>
+                <button id="dbRebuildBtn" onclick="rebuildDatabase()" 
+                  class="hidden px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors">
+                  🔄 DB 재구축
+                </button>
+                <button id="dbUpdateBtn" onclick="updateDatabase()" 
+                  class="hidden px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+                  ✨ DB 업데이트
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -537,6 +843,9 @@
 
     // 초기 렌더링
     render();
+    
+    // DB 상태 자동 확인 (페이지 로드 시)
+    setTimeout(checkDatabaseStatus, 500);
   </script>
 </body>
 </html>

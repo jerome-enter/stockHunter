@@ -146,7 +146,7 @@ class KISApiClient(
      * 일별 주가 조회
      * 
      * @param stockCode 종목코드 (6자리)
-     * @param days 조회 일수 (최대 100일)
+     * @param days 조회 일수 (기본 100일, 실제로는 30개만 반환됨 - API 제한)
      * @return 일별 시세 데이터
      */
     suspend fun getDailyPrice(stockCode: String, days: Int = 100): KISPriceResponse {
@@ -175,11 +175,61 @@ class KISApiClient(
                 if (it.rt_cd != "0") {
                     logger.warn { "API returned non-zero code for $stockCode: ${it.msg1}" }
                 }
+                logger.debug { "Fetched ${it.output.size} days of price data for $stockCode" }
             }
             
         } catch (e: Exception) {
             logger.error(e) { "Failed to fetch daily price for $stockCode" }
             throw KISApiException("Failed to get daily price for $stockCode: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * 기간별 일별 시세 조회 (DB 구축용)
+     * 
+     * @param stockCode 종목코드 (6자리)
+     * @param startDate 시작일 (YYYYMMDD)
+     * @param endDate 종료일 (YYYYMMDD)
+     * @return 기간 내 일별 시세 데이터
+     */
+    suspend fun getDailyPriceByPeriod(
+        stockCode: String,
+        startDate: String,
+        endDate: String
+    ): KISPriceResponse {
+        rateLimiter.acquire()
+        ensureAccessToken()
+        
+        val trId = if (isProduction) "FHKST03010100" else "FHKST03010100"
+        
+        try {
+            logger.debug { "Fetching period price for $stockCode ($startDate ~ $endDate)" }
+            
+            val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice") {
+                headers {
+                    append("authorization", "Bearer $cachedToken")
+                    append("appkey", appKey)
+                    append("appsecret", appSecret)
+                    append("tr_id", trId)
+                }
+                parameter("fid_cond_mrkt_div_code", "J") // 주식시장 구분 (J: 전체)
+                parameter("fid_input_iscd", stockCode)
+                parameter("fid_input_date_1", startDate) // 시작일 YYYYMMDD
+                parameter("fid_input_date_2", endDate) // 종료일 YYYYMMDD
+                parameter("fid_period_div_code", "D") // 기간 구분 (D: 일)
+                parameter("fid_org_adj_prc", "0") // 수정주가 (0: 수정주가 반영)
+            }
+            
+            return response.body<KISPriceResponse>().also {
+                if (it.rt_cd != "0") {
+                    logger.warn { "API returned non-zero code for $stockCode: ${it.msg1}" }
+                }
+                logger.debug { "Fetched ${it.output.size} records for $stockCode" }
+            }
+            
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to fetch period price for $stockCode" }
+            throw KISApiException("Failed to get period price for $stockCode: ${e.message}", e)
         }
     }
     

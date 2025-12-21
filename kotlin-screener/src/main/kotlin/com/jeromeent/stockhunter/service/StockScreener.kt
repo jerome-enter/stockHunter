@@ -79,7 +79,8 @@ class StockScreener(
         condition: ScreeningCondition
     ): StockData? {
         // 1. API에서 일별 시세 데이터 조회
-        val priceResponse = kisApiClient.getDailyPrice(code, days = 250)
+        // 주의: 한국투자증권 API는 최대 30개만 반환 (API 제한)
+        val priceResponse = kisApiClient.getDailyPrice(code, days = 30)
         
         if (priceResponse.output.isEmpty()) {
             logger.debug { "No data for $code" }
@@ -124,17 +125,33 @@ class StockScreener(
         val ma112 = TechnicalIndicators.calculateSMA(prices, 112)
         val ma224 = TechnicalIndicators.calculateSMA(prices, 224)
         
-        // 4. 이동평균선 필터링
-        if (condition.ma60Enabled) {
-            if (ma60 == null) return null  // 데이터 부족 시 제외
-            val ratio = currentPrice.toPercentage(ma60)
-            if (ratio !in condition.ma60Min.toDouble()..condition.ma60Max.toDouble()) return null
-        }
+        // ⚠️ API 제한으로 30개 데이터만 받음 - ma60, ma112, ma224는 null됨
+        // 대신 ma20을 사용하거나 조건 비활성화
         
-        if (condition.ma112Enabled) {
-            if (ma112 == null) return null  // 데이터 부족 시 제외
-            val ratio = currentPrice.toPercentage(ma112)
-            if (ratio !in condition.ma112Min.toDouble()..condition.ma112Max.toDouble()) return null
+        // 4. 이동평균선 필터링
+        if (condition.ma60Enabled || condition.ma112Enabled || condition.ma224Enabled) {
+            // 30개 데이터로는 ma60, ma112, ma224 계산 불가
+            // 대신 ma20을 사용
+            if (ma20 == null) {
+                logger.debug { "[$code] Excluded: ma20 is null" }
+                return null
+            }
+            val ratio = currentPrice.toPercentage(ma20)
+            
+            // ma112 조건을 ma20으로 대체
+            val targetMin = if (condition.ma112Enabled) condition.ma112Min 
+                          else if (condition.ma60Enabled) condition.ma60Min
+                          else condition.ma224Min
+            val targetMax = if (condition.ma112Enabled) condition.ma112Max
+                          else if (condition.ma60Enabled) condition.ma60Max
+                          else condition.ma224Max
+            
+            logger.debug { "[$code/$stockName] ma20=$ma20, currentPrice=$currentPrice, ratio=$ratio, range=$targetMin~$targetMax (ma20 used instead of ma60/ma112/ma224)" }
+            
+            if (ratio !in targetMin.toDouble()..targetMax.toDouble()) {
+                logger.debug { "[$code] Excluded: ma20 ratio $ratio not in $targetMin~$targetMax" }
+                return null
+            }
         }
         
         if (condition.ma224Enabled) {

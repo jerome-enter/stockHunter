@@ -39,6 +39,9 @@ dependencies {
     // Rate Limiting
     implementation("com.google.guava:guava:32.1.3-jre")
     
+    // SQLite Database
+    implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+    
     // Testing
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("io.ktor:ktor-server-test-host:2.3.7")
