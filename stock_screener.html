@@ -1169,6 +1169,16 @@
             y1: {
               type: 'linear',
               position: 'right',
+              min: function(context) {
+                // 왼쪽 Y축과 동일한 범위 사용
+                const allLows = sortedData.map(d => d.low).filter(v => v != null);
+                return Math.min(...allLows) * 0.95;
+              },
+              max: function(context) {
+                // 왼쪽 Y축과 동일한 범위 사용
+                const allHighs = sortedData.map(d => d.high).filter(v => v != null);
+                return Math.max(...allHighs) * 1.05;
+              },
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.6)',
                 callback: function(value) {
