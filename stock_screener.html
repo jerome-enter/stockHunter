@@ -335,18 +335,25 @@
         market: 'domestic',
         exchangeCode: 'KRX',  // KRX(국내), NAS(나스닥), NYS(뉴욕)
         excludeManagement: true,  // A: 관리종목 제외 (전략식 필수)
+        ma20Enabled: true,  // J: 20일선 105% 이하 (전략식 J or K) ✅ 기본 체크
+        ma20Min: 0,
+        ma20Max: 105,
         ma60Enabled: false,
         ma60Min: 95,
         ma60Max: 105,
-        ma112Enabled: true,  // E: 112일선 95~105% (전략식 E or F)
+        ma112Enabled: true,  // E: 112일선 95~105% (전략식 E or F) ✅ 기본 체크
         ma112Min: 95,
         ma112Max: 105,
-        ma224Enabled: false,  // F: 224일선 95~105% (전략식 E or F, 선택)
+        ma224Enabled: true,  // F: 224일선 95~105% (전략식 E or F) ✅ 기본 체크
         ma224Min: 95,
         ma224Max: 105,
+        highLowRangeEnabled: true,  // G/H: 고가/저가 등락률 (전략식 필수) ✅ 기본 체크
+        highLowRangeMin: 12,
+        highLowRangeMax: 30,
+        highLowRangePeriod: 30,
         excludeETF: true,  // C: ETF 제외 (전략식 필수)
         excludeETN: true,  // C: ETN 제외 (전략식 필수)
-        volumeEnabled: false,  // 거래량은 전략식에 없음 (G/H는 다른 조건)
+        volumeEnabled: false,  // 거래량은 전략식에 없음
         volumeMultiple: 1.5,
         maAlignment: true,  // D+I: 이평선 정배열 (전략식 필수)
         bbEnabled: true,  // K+L+M: 볼린저밴드 (전략식 필수)
@@ -1713,7 +1720,15 @@
             <div class="space-y-2">
               <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
                 <input type="checkbox" id="maAlignment" ${app.conditions.maAlignment ? 'checked' : ''} class="w-4 h-4">
-                <span>이평선 정배열 (5 > 20 > 60 > 112)</span>
+                <span>이평선 정배열 (D: 60<112<224, I: 5≥20) ⭐ 전략식 필수</span>
+              </label>
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="ma20Enabled" ${app.conditions.ma20Enabled ? 'checked' : ''} class="w-4 h-4">
+                <span>J: 20일선 105% 이하</span>
+              </label>
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="highLowRangeEnabled" ${app.conditions.highLowRangeEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>G/H: 고가/저가 등락률 12~30% (30봉 이내) ⭐ 전략식 필수</span>
               </label>
             </div>
           </div>
@@ -1859,7 +1874,7 @@
         });
       });
 
-      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
+      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'ma20Enabled', 'highLowRangeEnabled', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', (e) => {
           app.conditions[id] = e.target.checked;

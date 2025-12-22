@@ -17,6 +17,7 @@ data class StockData(
     val ma60: Double? = null,
     val ma112: Double? = null,
     val ma224: Double? = null,
+    val ma20Ratio: Double? = null,
     val ma60Ratio: Double? = null,
     val ma112Ratio: Double? = null,
     val ma224Ratio: Double? = null,
@@ -88,6 +89,10 @@ data class ScreeningCondition(
     val isProduction: Boolean = false,  // 실전투자 여부
     
     // 이동평균선 조건
+    val ma20Enabled: Boolean = false,
+    val ma20Min: Int = 0,
+    val ma20Max: Int = 105,  // J: 20일선 105% 이하
+    
     val ma60Enabled: Boolean = false,
     val ma60Min: Int = 95,
     val ma60Max: Int = 105,
@@ -116,6 +121,12 @@ data class ScreeningCondition(
     val priceChangeEnabled: Boolean = false,
     val priceChangeMin: Double = -100.0,
     val priceChangeMax: Double = 100.0,
+    
+    // G/H: 고가/저가 등락률 (30봉 이내)
+    val highLowRangeEnabled: Boolean = false,
+    val highLowRangeMin: Double = 12.0,
+    val highLowRangeMax: Double = 30.0,
+    val highLowRangePeriod: Int = 30,
     
     // 제외 조건
     val excludeETF: Boolean = true,

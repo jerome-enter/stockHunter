@@ -123,6 +123,19 @@ class DBStockScreener(
         val ma224 = TechnicalIndicators.calculateSMA(prices, 224)
         
         // 5. 이동평균선 필터링
+        // J: 20일선 비율 체크
+        if (condition.ma20Enabled) {
+            if (ma20 == null) {
+                logger.debug { "[$code] Excluded: insufficient data for ma20" }
+                return null
+            }
+            val ratio = currentPrice.toPercentage(ma20)
+            if (ratio !in condition.ma20Min.toDouble()..condition.ma20Max.toDouble()) {
+                logger.debug { "[$code] Excluded: ma20 ratio $ratio not in ${condition.ma20Min}~${condition.ma20Max}" }
+                return null
+            }
+        }
+        
         if (condition.ma60Enabled) {
             if (ma60 == null) {
                 logger.debug { "[$code] Excluded: insufficient data for ma60" }
@@ -159,10 +172,24 @@ class DBStockScreener(
             }
         }
         
-        // 6. 이평선 정배열 체크
+        // 6. 이평선 정배열 체크 (전략식 D+I)
         if (condition.maAlignment) {
-            if (!TechnicalIndicators.isMAAligned(ma5, ma20, ma60, ma112)) {
-                logger.debug { "[$code] Excluded: MA not aligned" }
+            // D: 60일선 < 112일선 < 224일선 (장기 상승 추세)
+            val longTermAligned = if (ma60 != null && ma112 != null && ma224 != null) {
+                ma60 < ma112 && ma112 < ma224
+            } else {
+                false
+            }
+            
+            // I: 5일선 >= 20일선 (단기 상승 추세)
+            val shortTermAligned = if (ma5 != null && ma20 != null) {
+                ma5 >= ma20
+            } else {
+                false
+            }
+            
+            if (!longTermAligned || !shortTermAligned) {
+                logger.debug { "[$code] Excluded: MA not aligned (long=$longTermAligned, short=$shortTermAligned)" }
                 return null
             }
         }
@@ -222,6 +249,32 @@ class DBStockScreener(
             }
         }
         
+        // G/H: 고가/저가 등락률 필터링 (30봉 이내)
+        if (condition.highLowRangeEnabled) {
+            val period = minOf(condition.highLowRangePeriod, priceData.size)
+            val recentData = priceData.take(period)
+            
+            if (recentData.size >= 2) {
+                val currentHigh = recentData[0].high
+                val currentLow = recentData[0].low
+                val prevLow = recentData[1].low
+                val prevHigh = recentData[1].high
+                
+                // G: 0봉 고가 대비 1봉 저가 등락률
+                val highToLowChange = ((currentHigh - prevLow) / prevLow) * 100.0
+                // H: 0봉 저가 대비 1봉 고가 등락률
+                val lowToHighChange = ((currentLow - prevHigh) / prevHigh) * 100.0
+                
+                val matchesG = highToLowChange in condition.highLowRangeMin..condition.highLowRangeMax
+                val matchesH = lowToHighChange in condition.highLowRangeMin..condition.highLowRangeMax
+                
+                if (!matchesG && !matchesH) {
+                    logger.debug { "[$code] Excluded: high/low range G=$highToLowChange%, H=$lowToHighChange% not in ${condition.highLowRangeMin}~${condition.highLowRangeMax}%" }
+                    return null
+                }
+            }
+        }
+        
         // 10. 시가총액/재무 비율 필터링 (선택적으로 API 호출)
         var marketCap: Long? = null
         var per: Double? = null
@@ -273,6 +326,7 @@ class DBStockScreener(
             ma60 = ma60?.roundTo(0),
             ma112 = ma112?.roundTo(0),
             ma224 = ma224?.roundTo(0),
+            ma20Ratio = ma20?.let { currentPrice.toPercentage(it).roundTo(2) },
             ma60Ratio = ma60?.let { currentPrice.toPercentage(it).roundTo(2) },
             ma112Ratio = ma112?.let { currentPrice.toPercentage(it).roundTo(2) },
             ma224Ratio = ma224?.let { currentPrice.toPercentage(it).roundTo(2) },
