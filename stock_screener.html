@@ -334,37 +334,37 @@
       conditions: {
         market: 'domestic',
         exchangeCode: 'KRX',  // KRX(국내), NAS(나스닥), NYS(뉴욕)
-        excludeManagement: false,
+        excludeManagement: true,  // A: 관리종목 제외 (전략식 필수)
         ma60Enabled: false,
         ma60Min: 95,
         ma60Max: 105,
-        ma112Enabled: true,
+        ma112Enabled: true,  // E: 112일선 95~105% (전략식 E or F)
         ma112Min: 95,
         ma112Max: 105,
-        ma224Enabled: false,
+        ma224Enabled: false,  // F: 224일선 95~105% (전략식 E or F, 선택)
         ma224Min: 95,
         ma224Max: 105,
-        excludeETF: true,
-        excludeETN: true,
-        volumeEnabled: false,
+        excludeETF: true,  // C: ETF 제외 (전략식 필수)
+        excludeETN: true,  // C: ETN 제외 (전략식 필수)
+        volumeEnabled: false,  // 거래량은 전략식에 없음 (G/H는 다른 조건)
         volumeMultiple: 1.5,
-        maAlignment: false,
-        bbEnabled: false,
-        bbPeriod: 20,
+        maAlignment: true,  // D+I: 이평선 정배열 (전략식 필수)
+        bbEnabled: true,  // K+L+M: 볼린저밴드 (전략식 필수)
+        bbPeriod: 40,  // L+M: BB[40,2] (전략식 필수)
         bbMultiplier: 2,
-        bbPosition: 'all',
-        bbUpperBreak: false,
+        bbPosition: 'upper',  // L: 상한선 근접 (전략식 필수)
+        bbUpperBreak: true,  // M: 상한선 돌파 (전략식 필수)
         bbLowerBreak: false,
-        priceChangeEnabled: false,
+        priceChangeEnabled: false,  // 전략식에 없음
         priceChangeMin: -100,
         priceChangeMax: 100,
-        marketCapEnabled: false,
-        marketCapMin: 0,
+        marketCapEnabled: true,  // O: 시가총액 1000억 이상 (전략식 필수)
+        marketCapMin: 100000000000,  // 1000억
         marketCapMax: 10000000000000,
-        perEnabled: false,
+        perEnabled: true,  // Q: PER 30배 이하 (전략식 필수)
         perMin: 0,
         perMax: 30,
-        pbrEnabled: false,
+        pbrEnabled: false,  // 전략식에 없음
         pbrMin: 0,
         pbrMax: 3,
       },
