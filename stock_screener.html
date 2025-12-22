@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>제롬과 함께하는 행복 주식 검색기</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
   <style>
     body {
       background: linear-gradient(to bottom right, #0f172a, #1e3a8a, #0f172a);
@@ -51,6 +52,45 @@
       
       <div class="mt-6 text-xs text-white/50 text-center">
         ⚠️ 한국투자증권 API 제약 준수 중 (초당 15건)
+      </div>
+    </div>
+  </div>
+
+  <!-- 차트 팝업 모달 -->
+  <div id="chartModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/20 rounded-2xl p-6 max-w-6xl w-full max-h-[90vh] overflow-auto">
+      <!-- 헤더 -->
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <h3 class="text-2xl font-bold text-white" id="chartStockName">종목명</h3>
+          <p class="text-sm text-white/60" id="chartStockCode">000000</p>
+        </div>
+        <button onclick="closeChart()" class="text-white/60 hover:text-white text-3xl leading-none">&times;</button>
+      </div>
+      
+      <!-- 차트 -->
+      <div class="bg-slate-800/50 rounded-xl p-4 mb-4">
+        <canvas id="stockChart" height="400"></canvas>
+      </div>
+      
+      <!-- 통계 정보 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div class="bg-slate-800/50 rounded-lg p-3">
+          <div class="text-white/60 text-xs mb-1">현재가</div>
+          <div class="text-white font-bold text-lg" id="chartPrice">-</div>
+        </div>
+        <div class="bg-slate-800/50 rounded-lg p-3">
+          <div class="text-white/60 text-xs mb-1">60일선</div>
+          <div class="text-blue-400 font-bold" id="chartMa60">-</div>
+        </div>
+        <div class="bg-slate-800/50 rounded-lg p-3">
+          <div class="text-white/60 text-xs mb-1">112일선</div>
+          <div class="text-purple-400 font-bold" id="chartMa112">-</div>
+        </div>
+        <div class="bg-slate-800/50 rounded-lg p-3">
+          <div class="text-white/60 text-xs mb-1">224일선</div>
+          <div class="text-red-400 font-bold" id="chartMa224">-</div>
+        </div>
       </div>
     </div>
   </div>
@@ -390,6 +430,201 @@
     function getMARatio(stock, period) {
       const ratio = stock[`ma${period}Ratio`];
       return ratio !== undefined && ratio !== null ? ratio : 'N/A';
+    }
+    
+    // 차트 관련 변수
+    let chartInstance = null;
+    
+    // 차트 표시
+    async function showChart(stockCode, stockName) {
+      const modal = document.getElementById('chartModal');
+      modal.classList.remove('hidden');
+      
+      // 헤더 정보 설정
+      document.getElementById('chartStockName').textContent = stockName;
+      document.getElementById('chartStockCode').textContent = stockCode;
+      
+      try {
+        // 280일 가격 데이터 가져오기
+        const response = await fetch(`http://localhost:8080/api/v1/stocks/${stockCode}/prices?days=280`);
+        if (!response.ok) throw new Error('데이터 로드 실패');
+        
+        const data = await response.json();
+        
+        // 차트 그리기
+        drawChart(data, stockName);
+        
+        // 통계 정보 업데이트
+        updateChartStats(data);
+        
+      } catch (err) {
+        alert('❌ 차트 데이터를 불러올 수 없습니다: ' + err.message);
+        closeChart();
+      }
+    }
+    
+    // 차트 닫기
+    function closeChart() {
+      const modal = document.getElementById('chartModal');
+      modal.classList.add('hidden');
+      
+      // 기존 차트 파괴
+      if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
+      }
+    }
+    
+    // 차트 그리기
+    function drawChart(data, stockName) {
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+      
+      const ctx = document.getElementById('stockChart').getContext('2d');
+      
+      // 데이터 정렬 (오래된 것부터)
+      const sortedData = [...data].reverse();
+      
+      // 날짜와 가격 추출
+      const labels = sortedData.map(d => d.date);
+      const prices = sortedData.map(d => d.close);
+      const volumes = sortedData.map(d => d.volume);
+      
+      // 이동평균 계산
+      const ma60 = calculateMA(prices, 60);
+      const ma112 = calculateMA(prices, 112);
+      const ma224 = calculateMA(prices, 224);
+      
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: '종가',
+              data: prices,
+              borderColor: 'rgb(255, 255, 255)',
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              borderWidth: 2,
+              pointRadius: 0,
+              yAxisID: 'y'
+            },
+            {
+              label: '60일선',
+              data: ma60,
+              borderColor: 'rgb(59, 130, 246)',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              yAxisID: 'y'
+            },
+            {
+              label: '112일선',
+              data: ma112,
+              borderColor: 'rgb(168, 85, 247)',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              yAxisID: 'y'
+            },
+            {
+              label: '224일선',
+              data: ma224,
+              borderColor: 'rgb(239, 68, 68)',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              yAxisID: 'y'
+            },
+            {
+              label: '거래량',
+              data: volumes,
+              type: 'bar',
+              backgroundColor: 'rgba(34, 197, 94, 0.5)',
+              yAxisID: 'y1',
+              order: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              labels: { color: 'white' }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              titleColor: 'white',
+              bodyColor: 'white'
+            }
+          },
+          scales: {
+            x: {
+              ticks: { 
+                color: 'rgba(255, 255, 255, 0.6)',
+                maxTicksLimit: 10
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              ticks: { color: 'rgba(255, 255, 255, 0.8)' },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              ticks: { color: 'rgba(34, 197, 94, 0.8)' },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+    
+    // 이동평균 계산
+    function calculateMA(prices, period) {
+      const result = [];
+      for (let i = 0; i < prices.length; i++) {
+        if (i < period - 1) {
+          result.push(null);
+        } else {
+          const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+          result.push(sum / period);
+        }
+      }
+      return result;
+    }
+    
+    // 통계 정보 업데이트
+    function updateChartStats(data) {
+      if (data.length === 0) return;
+      
+      const latest = data[0]; // 최신 데이터
+      const prices = data.map(d => d.close);
+      
+      document.getElementById('chartPrice').textContent = 
+        latest.close.toLocaleString() + '원';
+      
+      const ma60 = calculateMA(prices.reverse(), 60);
+      const ma112 = calculateMA(prices, 112);
+      const ma224 = calculateMA(prices, 224);
+      
+      const latestIdx = ma60.length - 1;
+      
+      document.getElementById('chartMa60').textContent = 
+        ma60[latestIdx] ? Math.round(ma60[latestIdx]).toLocaleString() + '원' : 'N/A';
+      document.getElementById('chartMa112').textContent = 
+        ma112[latestIdx] ? Math.round(ma112[latestIdx]).toLocaleString() + '원' : 'N/A';
+      document.getElementById('chartMa224').textContent = 
+        ma224[latestIdx] ? Math.round(ma224[latestIdx]).toLocaleString() + '원' : 'N/A';
     }
     
     // 종목명 동기화
@@ -928,8 +1163,8 @@
                 </thead>
                 <tbody>
                   ${app.results.map(stock => `
-                    <tr class="border-b border-white/10 hover:bg-white/5">
-                      <td class="px-2 py-2 text-white font-medium">${stock.name}</td>
+                    <tr class="border-b border-white/10 hover:bg-white/5 cursor-pointer" onclick="showChart('${stock.code}', '${stock.name}')">
+                      <td class="px-2 py-2 text-white font-medium hover:text-blue-400">${stock.name}</td>
                       <td class="px-2 py-2 text-gray-300 text-xs">${stock.code}</td>
                       <td class="px-2 py-2 text-white">${parseFloat(stock.currentPrice).toLocaleString()}</td>
                       <td class="px-2 py-2 ${parseFloat(stock.changePercent) >= 0 ? 'text-red-400' : 'text-blue-400'} font-bold">

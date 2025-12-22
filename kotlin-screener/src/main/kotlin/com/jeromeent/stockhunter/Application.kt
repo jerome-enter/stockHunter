@@ -246,6 +246,46 @@ fun Route.tokenDebugRoutes() {
 fun Route.domesticScreeningRoutes() {
     route("/api/v1") {
         
+        // GET /api/v1/stocks/:code/prices - 종목 가격 데이터 조회
+        get("/stocks/{code}/prices") {
+            try {
+                val stockCode = call.parameters["code"] ?: throw IllegalArgumentException("Stock code required")
+                val days = call.request.queryParameters["days"]?.toIntOrNull() ?: 280
+                
+                val database = com.jeromeent.stockhunter.db.PriceDatabase()
+                val prices = database.getPrices(stockCode, days)
+                database.close()
+                
+                // DailyPrice를 직렬화 가능한 모델로 변환
+                @Serializable
+                data class PriceData(
+                    val date: String,
+                    val open: Double,
+                    val high: Double,
+                    val low: Double,
+                    val close: Double,
+                    val volume: Long
+                )
+                
+                val response = prices.map { price ->
+                    PriceData(
+                        date = price.date.toString(),
+                        open = price.open,
+                        high = price.high,
+                        low = price.low,
+                        close = price.close,
+                        volume = price.volume
+                    )
+                }
+                
+                call.respond(HttpStatusCode.OK, response)
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to fetch prices" }
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse(error = e.message ?: "Error"))
+            }
+        }
+        
         // POST /api/v1/screen - 스크리닝 실행 (DB 기반)
         post("/screen") {
             try {
