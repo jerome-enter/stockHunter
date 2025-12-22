@@ -104,16 +104,21 @@
           </div>
           
           <!-- 줌 컨트롤 -->
-          <div class="flex gap-2">
-            <button onclick="zoomIn()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
-              +
-            </button>
-            <button onclick="zoomOut()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
-              −
-            </button>
-            <button onclick="resetZoom()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm">
-              초기화
-            </button>
+          <div class="flex flex-col gap-2">
+            <div class="flex gap-2">
+              <button onclick="zoomIn()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
+                +
+              </button>
+              <button onclick="zoomOut()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
+                −
+              </button>
+              <button onclick="resetZoom()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm">
+                초기화
+              </button>
+            </div>
+            <div class="text-xs text-white/60">
+              💡 이동: Shift + 드래그 또는 휠 클릭
+            </div>
           </div>
         </div>
         
@@ -197,25 +202,45 @@
     function loadApiKeys() {
       const encryptedKey = localStorage.getItem('kis_app_key_enc');
       const encryptedSecret = localStorage.getItem('kis_app_secret_enc');
+      const isProd = localStorage.getItem('kis_is_production');
+      
+      console.log('[DEBUG] Loading API keys from localStorage');
+      console.log('[DEBUG] Encrypted key exists:', !!encryptedKey);
+      console.log('[DEBUG] Encrypted secret exists:', !!encryptedSecret);
+      console.log('[DEBUG] isProduction:', isProd);
+      
+      const decryptedKey = encryptedKey ? decrypt(encryptedKey) : '';
+      const decryptedSecret = encryptedSecret ? decrypt(encryptedSecret) : '';
+      
+      console.log('[DEBUG] Decrypted key length:', decryptedKey.length);
+      console.log('[DEBUG] Decrypted secret length:', decryptedSecret.length);
       
       return {
-        appKey: encryptedKey ? decrypt(encryptedKey) : '',
-        appSecret: encryptedSecret ? decrypt(encryptedSecret) : '',
-        isProduction: localStorage.getItem('kis_is_production') === 'true'
+        appKey: decryptedKey,
+        appSecret: decryptedSecret,
+        isProduction: isProd ? isProd === 'true' : true // 기본값 true
       };
     }
     
     // LocalStorage에 API 키 저장 (암호화)
     function saveApiKeys(appKey, appSecret, isProduction) {
+      console.log('[DEBUG] Saving API keys to localStorage');
+      console.log('[DEBUG] Key length:', appKey?.length || 0);
+      console.log('[DEBUG] Secret length:', appSecret?.length || 0);
+      console.log('[DEBUG] isProduction:', isProduction);
+      
       if (appKey) {
         const encrypted = encrypt(appKey);
         localStorage.setItem('kis_app_key_enc', encrypted);
+        console.log('[DEBUG] Encrypted key saved:', encrypted.substring(0, 20) + '...');
       }
       if (appSecret) {
         const encrypted = encrypt(appSecret);
         localStorage.setItem('kis_app_secret_enc', encrypted);
+        console.log('[DEBUG] Encrypted secret saved:', encrypted.substring(0, 20) + '...');
       }
       localStorage.setItem('kis_is_production', isProduction.toString());
+      console.log('[DEBUG] Save completed');
     }
     
     // API 키 수동 저장
@@ -238,6 +263,48 @@
       alert('✅ API 키가 암호화되어 안전하게 저장되었습니다!\n\n🔐 XOR 암호화 + Base64 인코딩\n\n다음 방문 시 자동으로 불러옵니다.');
     }
     
+    // API 키 저장 상태 디버그
+    function debugApiKeys() {
+      const encKey = localStorage.getItem('kis_app_key_enc');
+      const encSecret = localStorage.getItem('kis_app_secret_enc');
+      const isProd = localStorage.getItem('kis_is_production');
+      
+      let msg = '🔍 저장 상태 확인\n\n';
+      msg += '━━━━━━━━━━━━━━━━━━\n';
+      msg += `암호화된 KEY: ${encKey ? '✅ 저장됨 (' + encKey.length + '자)' : '❌ 없음'}\n`;
+      msg += `암호화된 SECRET: ${encSecret ? '✅ 저장됨 (' + encSecret.length + '자)' : '❌ 없음'}\n`;
+      msg += `실전투자 설정: ${isProd || '없음'}\n`;
+      msg += '━━━━━━━━━━━━━━━━━━\n\n';
+      
+      if (encKey && encSecret) {
+        const decKey = decrypt(encKey);
+        const decSecret = decrypt(encSecret);
+        msg += `복호화된 KEY 길이: ${decKey.length}자\n`;
+        msg += `복호화된 SECRET 길이: ${decSecret.length}자\n`;
+        msg += '━━━━━━━━━━━━━━━━━━\n\n';
+        
+        if (decKey.length > 0 && decSecret.length > 0) {
+          msg += '✅ 정상: 저장 및 복호화 성공!\n';
+          msg += '\n현재 메모리:\n';
+          msg += `app.appKey: ${app.appKey?.length || 0}자\n`;
+          msg += `app.appSecret: ${app.appSecret?.length || 0}자\n`;
+        } else {
+          msg += '⚠️ 경고: 복호화 실패!\n';
+          msg += '브라우저 정보가 변경되었을 수 있습니다.\n';
+          msg += '→ [🗑️ 저장된 키 삭제] 후 재저장하세요.';
+        }
+      } else {
+        msg += '❌ 저장된 API 키가 없습니다.\n';
+        msg += '\n해결 방법:\n';
+        msg += '1. API KEY와 SECRET 입력\n';
+        msg += '2. [💾 API 키 저장] 클릭\n';
+        msg += '3. "✅ 암호화되어 저장" 메시지 확인';
+      }
+      
+      alert(msg);
+      console.log('[DEBUG] Full localStorage:', localStorage);
+    }
+    
     // API 키 삭제
     function clearApiKeys() {
       if (confirm('⚠️ 저장된 API 키를 삭제하시겠습니까?')) {
@@ -257,12 +324,11 @@
       }
     }
     
-    const savedKeys = loadApiKeys();
     const app = {
       selectedMarket: 'domestic',  // domestic or us
-      isProduction: savedKeys.isProduction,   // 실전투자 여부 (저장된 값 또는 기본값)
-      appKey: savedKeys.appKey,
-      appSecret: savedKeys.appSecret,
+      isProduction: true,   // 기본값, 나중에 로드됨
+      appKey: '',  // 나중에 로드됨
+      appSecret: '',  // 나중에 로드됨
       searchDomestic: true,   // 국내주식 검색 여부
       searchUS: false,        // 해외주식 검색 여부
       conditions: {
@@ -889,7 +955,14 @@
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: 'ctrl'
+                modifierKey: null, // 수정자 키 없이도 가능
+                onPanStart: function({chart, event}) {
+                  // 마우스 가운데 버튼(휠 클릭) 또는 Shift 키
+                  if (event.native.button === 1 || event.native.shiftKey) {
+                    return true;
+                  }
+                  return false;
+                }
               },
               zoom: {
                 wheel: {
@@ -913,8 +986,24 @@
             y: {
               type: 'linear',
               position: 'left',
-              ticks: { color: 'rgba(255, 255, 255, 0.8)' },
+              ticks: { 
+                color: 'rgba(255, 255, 255, 0.8)',
+                callback: function(value) {
+                  return value.toLocaleString();
+                }
+              },
               grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              ticks: { 
+                color: 'rgba(255, 255, 255, 0.6)',
+                callback: function(value) {
+                  return value.toLocaleString();
+                }
+              },
+              grid: { display: false }
             }
           }
         }
@@ -955,7 +1044,14 @@
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: 'ctrl'
+                modifierKey: null, // 수정자 키 없이도 가능
+                onPanStart: function({chart, event}) {
+                  // 마우스 가운데 버튼(휠 클릭) 또는 Shift 키
+                  if (event.native.button === 1 || event.native.shiftKey) {
+                    return true;
+                  }
+                  return false;
+                }
               },
               zoom: {
                 wheel: {
@@ -1353,26 +1449,36 @@
             </div>
           </div>
           
+          <!-- 디버그 정보 표시 -->
+          <div class="bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-3 mb-4 text-xs text-yellow-200">
+            <strong>🔍 디버그 정보:</strong><br>
+            app.appKey 길이: ${app.appKey?.length || 0}자 ${app.appKey ? '✅' : '❌'}<br>
+            app.appSecret 길이: ${app.appSecret?.length || 0}자 ${app.appSecret ? '✅' : '❌'}<br>
+            isProduction: ${app.isProduction ? 'true ✅' : 'false'}
+          </div>
+          
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label class="block text-sm font-medium text-blue-200 mb-2">
                 APP KEY
-                ${app.appKey ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : ''}
+                ${app.appKey ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : '<span class="text-red-400 text-xs ml-2">✗ 비어있음</span>'}
               </label>
-              <input type="text" id="appKey" value="${app.appKey}" placeholder="APP KEY 입력"
+              <input type="text" id="appKey" value="${app.appKey || ''}" placeholder="APP KEY 입력"
+                oninput="app.appKey = this.value; render();"
                 class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
             <div>
               <label class="block text-sm font-medium text-blue-200 mb-2">
                 APP SECRET
-                ${app.appSecret ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : ''}
+                ${app.appSecret ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : '<span class="text-red-400 text-xs ml-2">✗ 비어있음</span>'}
               </label>
-              <input type="password" id="appSecret" value="${app.appSecret}" placeholder="APP SECRET 입력"
+              <input type="password" id="appSecret" value="${app.appSecret || ''}" placeholder="APP SECRET 입력"
+                oninput="app.appSecret = this.value; render();"
                 class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
           </div>
           
-          <div class="flex gap-2 mb-4">
+          <div class="flex gap-2 mb-4 flex-wrap">
             <button onclick="saveApiKeysManual()" 
               class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
               💾 API 키 저장
@@ -1383,6 +1489,10 @@
                 🗑️ 저장된 키 삭제
               </button>
             ` : ''}
+            <button onclick="debugApiKeys()" 
+              class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors">
+              🔍 저장 상태 확인
+            </button>
           </div>
           
           <div class="text-sm text-blue-200 bg-blue-900/30 p-3 rounded-lg mb-4">
@@ -1806,8 +1916,32 @@
       });
     }
 
+    // API 키 로드 (페이지 로드 후)
+    function initializeApiKeys() {
+      const savedKeys = loadApiKeys();
+      console.log('[DEBUG] savedKeys loaded:', {
+        appKey: savedKeys.appKey?.length || 0,
+        appSecret: savedKeys.appSecret?.length || 0,
+        isProduction: savedKeys.isProduction
+      });
+      
+      app.appKey = savedKeys.appKey;
+      app.appSecret = savedKeys.appSecret;
+      app.isProduction = savedKeys.isProduction;
+      
+      console.log('[DEBUG] app object after load:', {
+        appKey: app.appKey?.length || 0,
+        appSecret: app.appSecret?.length || 0
+      });
+      
+      render(); // 다시 렌더링해서 input 필드에 값 표시
+    }
+    
     // 초기 렌더링
     render();
+    
+    // API 키 로드 (DOM 로드 후)
+    setTimeout(initializeApiKeys, 100);
     
     // DB 상태 자동 확인 (페이지 로드 시)
     setTimeout(checkDatabaseStatus, 500);
