@@ -5,6 +5,8 @@ import com.jeromeent.stockhunter.model.KISPriceResponse
 import com.jeromeent.stockhunter.model.KISTokenResponse
 import com.jeromeent.stockhunter.model.KISCurrentPriceResponse
 import com.jeromeent.stockhunter.model.SearchInfoResponse
+import com.jeromeent.stockhunter.model.FinancialRatioResponse
+import com.jeromeent.stockhunter.model.FinancialRatioOutput
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -501,6 +503,41 @@ class KISApiClient(
         if (cachedToken == null || tokenExpireTime == null || 
             Instant.now().isAfter(tokenExpireTime!!.minusSeconds(300))) {
             getAccessToken()
+        }
+    }
+    
+    /**
+     * 재무비율 조회 (P, R 조건용)
+     * 
+     * @param code 종목코드 (6자리)
+     * @return 재무비율 정보 (부채비율, 유보율 등)
+     */
+    suspend fun getFinancialRatio(code: String): FinancialRatioOutput? {
+        rateLimiter.acquire()
+        ensureAccessToken()
+        
+        return try {
+            val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-financial-ratio") {
+                headers {
+                    append("authorization", "Bearer $cachedToken")
+                    append("appkey", appKey)
+                    append("appsecret", appSecret)
+                    append("tr_id", "FHKST66430300") // 주식 재무비율 조회
+                }
+                parameter("FID_COND_MRKT_DIV_CODE", "J") // 주식
+                parameter("FID_INPUT_ISCD", code)
+            }.body<FinancialRatioResponse>()
+            
+            if (response.rt_cd == "0") {
+                logger.debug { "[$code] Financial ratio fetched successfully" }
+                response.output
+            } else {
+                logger.warn { "[$code] Failed to fetch financial ratio: ${response.msg1}" }
+                null
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "[$code] Error fetching financial ratio" }
+            null
         }
     }
     

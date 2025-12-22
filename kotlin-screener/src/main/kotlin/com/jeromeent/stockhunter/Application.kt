@@ -286,6 +286,45 @@ fun Route.domesticScreeningRoutes() {
             }
         }
         
+        // GET /api/v1/stocks/:code/financial - 재무비율 조회 (P, R 조건)
+        get("/stocks/{code}/financial") {
+            try {
+                val stockCode = call.parameters["code"] ?: throw IllegalArgumentException("Stock code required")
+                val appKey = call.request.queryParameters["appKey"] ?: throw IllegalArgumentException("appKey required")
+                val appSecret = call.request.queryParameters["appSecret"] ?: throw IllegalArgumentException("appSecret required")
+                val isProduction = call.request.queryParameters["isProduction"]?.toBoolean() ?: false
+                
+                val kisClient = KISApiClient(appKey, appSecret, isProduction)
+                val financial = kisClient.getFinancialRatio(stockCode)
+                kisClient.close()
+                
+                @Serializable
+                data class FinancialData(
+                    val debtRatio: Double? = null,      // P: 부채비율
+                    val reserveRatio: Double? = null,   // R: 유보율
+                    val eps: Double? = null,
+                    val bps: Double? = null,
+                    val roe: Double? = null,
+                    val roa: Double? = null
+                )
+                
+                val response = FinancialData(
+                    debtRatio = financial?.debt_ratio?.toDoubleOrNull(),
+                    reserveRatio = financial?.rsrv_rate?.toDoubleOrNull(),
+                    eps = financial?.eps?.toDoubleOrNull(),
+                    bps = financial?.bps?.toDoubleOrNull(),
+                    roe = financial?.roe?.toDoubleOrNull(),
+                    roa = financial?.roa?.toDoubleOrNull()
+                )
+                
+                call.respond(HttpStatusCode.OK, response)
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to fetch financial data" }
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse(error = e.message ?: "Error"))
+            }
+        }
+        
         // POST /api/v1/screen - 스크리닝 실행 (DB 기반)
         post("/screen") {
             try {

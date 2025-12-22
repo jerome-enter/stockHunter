@@ -266,3 +266,24 @@ data class SearchInfoOutput(
     val shtn_pdno: String? = null,               // 단축상품번호 (종목코드)
     val std_pdno: String? = null                 // 표준상품번호 (ISIN)
 )
+
+/**
+ * 재무비율 조회 응답 (P, R 조건용)
+ */
+@Serializable
+data class FinancialRatioResponse(
+    val output: FinancialRatioOutput? = null,
+    val rt_cd: String,           // 성공: "0"
+    val msg_cd: String,
+    val msg1: String
+)
+
+@Serializable
+data class FinancialRatioOutput(
+    val debt_ratio: String? = null,              // 부채비율 (P 조건)
+    val rsrv_rate: String? = null,               // 유보율 (R 조건)
+    val eps: String? = null,                     // EPS
+    val bps: String? = null,                     // BPS
+    val roe: String? = null,                     // ROE
+    val roa: String? = null                      // ROA
+)

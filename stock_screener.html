@@ -134,7 +134,7 @@
       </div>
       
       <!-- 통계 정보 -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
         <div class="bg-slate-800/50 rounded-lg p-3">
           <div class="text-white/60 text-xs mb-1">현재가</div>
           <div class="text-white font-bold text-lg" id="chartPrice">-</div>
@@ -151,6 +151,11 @@
           <div class="text-white/60 text-xs mb-1">224일선</div>
           <div class="text-red-400 font-bold" id="chartMa224">-</div>
         </div>
+      </div>
+      
+      <!-- 재무 정보 (P, R 조건) -->
+      <div class="bg-slate-800/50 rounded-lg p-3" id="financialInfo">
+        <div class="text-white/50 text-sm">📊 재무 정보 로딩 중...</div>
       </div>
     </div>
   </div>
@@ -384,7 +389,8 @@
       accessToken: '',
       results: [],
       loading: false,
-      error: ''
+      error: '',
+      hasSearched: false  // 검색 실행 여부
     };
 
     // FastAPI 백엔드 URL (같은 서버 사용)
@@ -705,9 +711,55 @@
         // 통계 정보 업데이트
         updateChartStats(data);
         
+        // 재무 정보 가져오기 (P, R 조건)
+        fetchFinancialData(stockCode);
+        
       } catch (err) {
         alert('❌ 차트 데이터를 불러올 수 없습니다: ' + err.message);
         closeChart();
+      }
+    }
+    
+    // 재무 정보 가져오기 (P: 부채비율, R: 유보율)
+    async function fetchFinancialData(stockCode) {
+      const financialDiv = document.getElementById('financialInfo');
+      financialDiv.innerHTML = '<div class="text-white/50 text-sm">📊 재무 정보 로딩 중...</div>';
+      
+      try {
+        const response = await fetch(`http://localhost:8080/api/v1/stocks/${stockCode}/financial?appKey=${app.appKey}&appSecret=${app.appSecret}&isProduction=${app.isProduction}`);
+        if (!response.ok) throw new Error('재무 데이터 로드 실패');
+        
+        const data = await response.json();
+        
+        // P, R 조건 체크
+        const pCheck = data.debtRatio !== null ? (data.debtRatio <= 200 ? '✅' : '❌') : '?';
+        const rCheck = data.reserveRatio !== null ? (data.reserveRatio >= 300 ? '✅' : '❌') : '?';
+        
+        financialDiv.innerHTML = `
+          <div class="text-white text-sm space-y-1">
+            <div class="font-semibold text-blue-200 mb-2">📊 재무 비율 (전략식 P, R)</div>
+            <div class="flex justify-between">
+              <span>P: 부채비율 (<= 200%)</span>
+              <span class="font-mono ${pCheck === '✅' ? 'text-green-400' : pCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
+                ${data.debtRatio !== null ? data.debtRatio.toFixed(2) + '%' : 'N/A'} ${pCheck}
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span>R: 유보율 (>= 300%)</span>
+              <span class="font-mono ${rCheck === '✅' ? 'text-green-400' : rCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
+                ${data.reserveRatio !== null ? data.reserveRatio.toFixed(2) + '%' : 'N/A'} ${rCheck}
+              </span>
+            </div>
+            ${data.eps !== null ? `<div class="flex justify-between"><span>EPS</span><span class="font-mono">${data.eps.toFixed(0)}</span></div>` : ''}
+            ${data.bps !== null ? `<div class="flex justify-between"><span>BPS</span><span class="font-mono">${data.bps.toFixed(0)}</span></div>` : ''}
+            ${data.roe !== null ? `<div class="flex justify-between"><span>ROE</span><span class="font-mono">${data.roe.toFixed(2)}%</span></div>` : ''}
+            ${data.roa !== null ? `<div class="flex justify-between"><span>ROA</span><span class="font-mono">${data.roa.toFixed(2)}%</span></div>` : ''}
+          </div>
+        `;
+        
+      } catch (err) {
+        console.error('재무 데이터 로드 실패:', err);
+        financialDiv.innerHTML = '<div class="text-red-400 text-sm">❌ 재무 정보를 불러올 수 없습니다</div>';
       }
     }
     
@@ -1410,9 +1462,11 @@
         }));
 
         console.log(`스크리닝 완료: ${result.matchedCount}/${result.totalScanned} 종목 (${result.executionTimeMs}ms)`);
+        app.hasSearched = true;  // 검색 실행됨
         
       } catch (err) {
         app.error = '검색 중 오류 발생: ' + err.message;
+        app.hasSearched = true;  // 검색 실행됨 (에러지만)
         console.error('Screening error:', err);
       } finally {
         app.loading = false;
@@ -1849,6 +1903,12 @@
                 </tbody>
               </table>
             </div>
+          </div>
+        ` : !app.loading && app.hasSearched ? `
+          <div class="bg-white/5 backdrop-blur-sm rounded-xl p-8 text-center border border-white/10">
+            <div class="text-6xl mb-4">🔍</div>
+            <p class="text-blue-200 text-xl font-semibold mb-2">검색 결과가 없습니다</p>
+            <p class="text-white/60 text-sm">조건을 완화하거나 다른 조건으로 다시 검색해보세요</p>
           </div>
         ` : !app.loading ? `
           <div class="bg-white/5 backdrop-blur-sm rounded-xl p-8 text-center border border-white/10">
