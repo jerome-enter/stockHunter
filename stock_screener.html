@@ -6,7 +6,8 @@
   <title>제롬과 함께하는 행복 주식 검색기</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
   <style>
     body {
       background: linear-gradient(to bottom right, #0f172a, #1e3a8a, #0f172a);
@@ -836,6 +837,15 @@
       }
     }
     
+    // Shift 키 상태 추적
+    let isShiftPressed = false;
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift') isShiftPressed = true;
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') isShiftPressed = false;
+    });
+    
     // 차트 그리기 (가격 + 거래량)
     function drawCharts(data, stockName) {
       // 기존 차트 파괴
@@ -858,6 +868,22 @@
       const highs = sortedData.map(d => d.high);
       const lows = sortedData.map(d => d.low);
       const volumes = sortedData.map(d => d.volume);
+      
+      // 일목균형표를 위한 미래 26일 추가
+      const lastDate = new Date(labels[labels.length - 1]);
+      for (let i = 1; i <= 26; i++) {
+        const futureDate = new Date(lastDate);
+        futureDate.setDate(lastDate.getDate() + i);
+        // 주말 건너뛰기
+        while (futureDate.getDay() === 0 || futureDate.getDay() === 6) {
+          futureDate.setDate(futureDate.getDate() + 1);
+        }
+        labels.push(futureDate.toISOString().split('T')[0]);
+        prices.push(null); // 미래 가격은 null
+        highs.push(null);
+        lows.push(null);
+        volumes.push(0); // 미래 거래량은 0
+      }
       
       // 체크박스 상태
       const showMA60 = document.getElementById('showMA60').checked;
@@ -1033,13 +1059,19 @@
             tooltip: {
               backgroundColor: 'rgba(0, 0, 0, 0.8)',
               titleColor: 'white',
-              bodyColor: 'white'
+              bodyColor: 'white',
+              enabled: function() {
+                // Shift 키를 누르고 있으면 tooltip 비활성화 (패닝 모드)
+                return !isShiftPressed;
+              }
             },
             zoom: {
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: 'shift' // Shift 키 눌러야 패닝 가능
+                modifierKey: 'shift',
+                // scaleMode 추가: 스케일만 이동 (데이터는 고정)
+                scaleMode: 'x'
               },
               zoom: {
                 wheel: {
@@ -1120,13 +1152,18 @@
             tooltip: {
               backgroundColor: 'rgba(0, 0, 0, 0.8)',
               titleColor: 'white',
-              bodyColor: 'white'
+              bodyColor: 'white',
+              enabled: function() {
+                // Shift 키를 누르고 있으면 tooltip 비활성화 (패닝 모드)
+                return !isShiftPressed;
+              }
             },
             zoom: {
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: 'shift', // Shift 키 눌러야 패닝 가능
+                modifierKey: 'shift',
+                scaleMode: 'x'
               },
               zoom: {
                 wheel: {
@@ -1185,12 +1222,18 @@
     // 이동평균 계산
     function calculateMA(prices, period) {
       const result = [];
+      const realLength = prices.filter(p => p !== null).length;
+      
       for (let i = 0; i < prices.length; i++) {
-        if (i < period - 1) {
+        if (i >= realLength) {
+          // 미래 데이터는 null
+          result.push(null);
+        } else if (i < period - 1) {
           result.push(null);
         } else {
-          const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-          result.push(sum / period);
+          const validPrices = prices.slice(i - period + 1, i + 1).filter(p => p !== null);
+          const sum = validPrices.reduce((a, b) => a + b, 0);
+          result.push(sum / validPrices.length);
         }
       }
       return result;
@@ -1201,7 +1244,10 @@
       const senkou_span_a = [];
       const senkou_span_b = [];
       
-      for (let i = 0; i < prices.length; i++) {
+      // 실제 데이터 길이 (미래 26일 제외)
+      const realDataLength = prices.filter(p => p !== null).length;
+      
+      for (let i = 0; i < realDataLength; i++) {
         if (i < 26) {
           senkou_span_a.push(null);
           senkou_span_b.push(null);
@@ -1214,10 +1260,10 @@
         // 기준선 (26일): (26일 최고 + 26일 최저) / 2
         const kijun = (Math.max(...highs.slice(i-25, i+1)) + Math.min(...lows.slice(i-25, i+1))) / 2;
         
-        // 선행스팬1: (전환선 + 기준선) / 2, 26일 선행
+        // 선행스팬1: (전환선 + 기준선) / 2
         senkou_span_a.push((tenkan + kijun) / 2);
         
-        // 선행스팬2: (52일 최고 + 52일 최저) / 2, 26일 선행
+        // 선행스팬2: (52일 최고 + 52일 최저) / 2
         if (i >= 52) {
           const span_b = (Math.max(...highs.slice(i-51, i+1)) + Math.min(...lows.slice(i-51, i+1))) / 2;
           senkou_span_b.push(span_b);
@@ -1226,39 +1272,57 @@
         }
       }
       
-      return { senkou_span_a, senkou_span_b };
+      // 26일 선행: 앞에 26개 null 추가, 뒤에 26개 실제 데이터로 확장
+      const shifted_senkou_a = Array(26).fill(null).concat(senkou_span_a);
+      const shifted_senkou_b = Array(26).fill(null).concat(senkou_span_b);
+      
+      return { 
+        senkou_span_a: shifted_senkou_a.slice(0, prices.length), 
+        senkou_span_b: shifted_senkou_b.slice(0, prices.length)
+      };
     }
     
-    // 추세선 계산 (선형 회귀)
+    // 추세선 계산 (선형 회귀) - 실제 데이터 범위만
     function calculateTrendline(prices) {
-      const n = prices.length;
+      // 실제 가격 데이터 개수 (null 아닌 것만)
+      const realPrices = prices.filter(p => p !== null);
+      const realLength = realPrices.length;
+      
       let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
       
-      for (let i = 0; i < n; i++) {
-        if (prices[i] !== null) {
-          sumX += i;
-          sumY += prices[i];
-          sumXY += i * prices[i];
-          sumXX += i * i;
-        }
+      for (let i = 0; i < realLength; i++) {
+        sumX += i;
+        sumY += realPrices[i];
+        sumXY += i * realPrices[i];
+        sumXX += i * i;
       }
       
-      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-      const intercept = (sumY - slope * sumX) / n;
+      const slope = (realLength * sumXY - sumX * sumY) / (realLength * sumXX - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / realLength;
       
-      return prices.map((_, i) => slope * i + intercept);
+      // 실제 데이터 범위만 계산하고, 미래는 null
+      return prices.map((p, i) => {
+        if (i < realLength) {
+          return slope * i + intercept;
+        }
+        return null; // 미래 26일은 null
+      });
     }
     
-    // 지지선 계산 (최근 60일 최저가 기준)
+    // 지지선 계산 (최근 60일 최저가 기준) - 실제 데이터 범위만
     function calculateSupport(lows) {
       const result = [];
       const period = 60;
+      const realLength = lows.filter(l => l !== null).length;
       
       for (let i = 0; i < lows.length; i++) {
-        if (i < period) {
+        if (i >= realLength) {
+          // 미래 데이터는 null
+          result.push(null);
+        } else if (i < period) {
           result.push(null);
         } else {
-          const min = Math.min(...lows.slice(i - period, i + 1));
+          const min = Math.min(...lows.slice(i - period, i + 1).filter(l => l !== null));
           result.push(min);
         }
       }
@@ -1266,16 +1330,20 @@
       return result;
     }
     
-    // 저항선 계산 (최근 60일 최고가 기준)
+    // 저항선 계산 (최근 60일 최고가 기준) - 실제 데이터 범위만
     function calculateResistance(highs) {
       const result = [];
       const period = 60;
+      const realLength = highs.filter(h => h !== null).length;
       
       for (let i = 0; i < highs.length; i++) {
-        if (i < period) {
+        if (i >= realLength) {
+          // 미래 데이터는 null
+          result.push(null);
+        } else if (i < period) {
           result.push(null);
         } else {
-          const max = Math.max(...highs.slice(i - period, i + 1));
+          const max = Math.max(...highs.slice(i - period, i + 1).filter(h => h !== null));
           result.push(max);
         }
       }
