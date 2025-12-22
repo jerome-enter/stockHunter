@@ -517,7 +517,7 @@ class KISApiClient(
         ensureAccessToken()
         
         return try {
-            val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-financial-ratio") {
+            val responseText = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-financial-ratio") {
                 headers {
                     append("authorization", "Bearer $cachedToken")
                     append("appkey", appKey)
@@ -526,15 +526,21 @@ class KISApiClient(
                 }
                 parameter("FID_COND_MRKT_DIV_CODE", "J") // 주식
                 parameter("FID_INPUT_ISCD", code)
-            }.body<FinancialRatioResponse>()
+            }.bodyAsText()
             
-            if (response.rt_cd == "0") {
-                logger.debug { "[$code] Financial ratio fetched successfully" }
-                response.output
-            } else {
-                logger.warn { "[$code] Failed to fetch financial ratio: ${response.msg1}" }
-                null
-            }
+            logger.info { "[$code] Financial API raw response: $responseText" }
+            
+            // 재무비율 API가 정확하지 않으므로 기본값 반환
+            // TODO: 올바른 TR_ID 확인 후 실제 파싱 필요
+            // 임시로 "N/A" 표시를 위해 null 값으로 구성된 객체 반환
+            FinancialRatioOutput(
+                debtRatio = null,
+                reserveRatio = null,
+                eps = null,
+                bps = null,
+                roe = null,
+                roa = null
+            )
         } catch (e: Exception) {
             logger.error(e) { "[$code] Error fetching financial ratio" }
             null

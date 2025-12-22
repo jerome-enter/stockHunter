@@ -61,9 +61,14 @@
   <div id="chartModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
     <div class="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/20 rounded-2xl p-6 max-w-6xl w-full overflow-y-auto" style="max-height: 90vh;">
       <!-- 헤더 -->
-      <div class="flex justify-between items-center mb-6">
-        <div>
-          <h3 class="text-2xl font-bold text-white" id="chartStockName">종목명</h3>
+      <div class="flex justify-between items-start mb-6">
+        <div class="flex-1">
+          <div class="flex items-center gap-4 mb-2">
+            <h3 class="text-2xl font-bold text-white" id="chartStockName">종목명</h3>
+            <div class="text-sm" id="financialInfoBadge">
+              <!-- 재무정보 표시 영역 (종목명 옆) -->
+            </div>
+          </div>
           <p class="text-sm text-white/60" id="chartStockCode">000000</p>
         </div>
         <button onclick="closeChart()" class="text-white/60 hover:text-white text-3xl leading-none">&times;</button>
@@ -151,11 +156,6 @@
           <div class="text-white/60 text-xs mb-1">224일선</div>
           <div class="text-red-400 font-bold" id="chartMa224">-</div>
         </div>
-      </div>
-      
-      <!-- 재무 정보 (P, R 조건) -->
-      <div class="bg-slate-800/50 rounded-lg p-3" id="financialInfo">
-        <div class="text-white/50 text-sm">📊 재무 정보 로딩 중...</div>
       </div>
     </div>
   </div>
@@ -722,8 +722,8 @@
     
     // 재무 정보 가져오기 (P: 부채비율, R: 유보율)
     async function fetchFinancialData(stockCode) {
-      const financialDiv = document.getElementById('financialInfo');
-      financialDiv.innerHTML = '<div class="text-white/50 text-sm">📊 재무 정보 로딩 중...</div>';
+      const financialDiv = document.getElementById('financialInfoBadge');
+      financialDiv.innerHTML = '<span class="text-white/50 text-xs">📊 로딩...</span>';
       
       try {
         const response = await fetch(`http://localhost:8080/api/v1/stocks/${stockCode}/financial?appKey=${app.appKey}&appSecret=${app.appSecret}&isProduction=${app.isProduction}`);
@@ -735,31 +735,27 @@
         const pCheck = data.debtRatio !== null ? (data.debtRatio <= 200 ? '✅' : '❌') : '?';
         const rCheck = data.reserveRatio !== null ? (data.reserveRatio >= 300 ? '✅' : '❌') : '?';
         
+        // 종목명 옆에 간단하게 표시
         financialDiv.innerHTML = `
-          <div class="text-white text-sm space-y-1">
-            <div class="font-semibold text-blue-200 mb-2">📊 재무 비율 (전략식 P, R)</div>
-            <div class="flex justify-between">
-              <span>P: 부채비율 (<= 200%)</span>
-              <span class="font-mono ${pCheck === '✅' ? 'text-green-400' : pCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
-                ${data.debtRatio !== null ? data.debtRatio.toFixed(2) + '%' : 'N/A'} ${pCheck}
+          <div class="flex items-center gap-3">
+            <div class="bg-slate-700/50 px-3 py-1 rounded-md">
+              <span class="text-white/60 text-xs">P: 부채비율</span>
+              <span class="ml-2 font-mono text-sm ${pCheck === '✅' ? 'text-green-400' : pCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
+                ${data.debtRatio !== null ? data.debtRatio.toFixed(1) + '%' : 'N/A'} ${pCheck}
               </span>
             </div>
-            <div class="flex justify-between">
-              <span>R: 유보율 (>= 300%)</span>
-              <span class="font-mono ${rCheck === '✅' ? 'text-green-400' : rCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
-                ${data.reserveRatio !== null ? data.reserveRatio.toFixed(2) + '%' : 'N/A'} ${rCheck}
+            <div class="bg-slate-700/50 px-3 py-1 rounded-md">
+              <span class="text-white/60 text-xs">R: 유보율</span>
+              <span class="ml-2 font-mono text-sm ${rCheck === '✅' ? 'text-green-400' : rCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
+                ${data.reserveRatio !== null ? data.reserveRatio.toFixed(1) + '%' : 'N/A'} ${rCheck}
               </span>
             </div>
-            ${data.eps !== null ? `<div class="flex justify-between"><span>EPS</span><span class="font-mono">${data.eps.toFixed(0)}</span></div>` : ''}
-            ${data.bps !== null ? `<div class="flex justify-between"><span>BPS</span><span class="font-mono">${data.bps.toFixed(0)}</span></div>` : ''}
-            ${data.roe !== null ? `<div class="flex justify-between"><span>ROE</span><span class="font-mono">${data.roe.toFixed(2)}%</span></div>` : ''}
-            ${data.roa !== null ? `<div class="flex justify-between"><span>ROA</span><span class="font-mono">${data.roa.toFixed(2)}%</span></div>` : ''}
           </div>
         `;
         
       } catch (err) {
         console.error('재무 데이터 로드 실패:', err);
-        financialDiv.innerHTML = '<div class="text-red-400 text-sm">❌ 재무 정보를 불러올 수 없습니다</div>';
+        financialDiv.innerHTML = '<span class="text-red-400 text-xs">❌ 재무정보 없음</span>';
       }
     }
     
