@@ -119,15 +119,18 @@ object StockMasterLoader {
     
     /**
      * 시장 정보와 함께 종목 조회
+     * 
+     * @return Map<종목코드, Pair<종목명, 시장>>
      */
-    private suspend fun fetchStocksWithMarketInfo(): Map<String, String> {
-        val result = mutableMapOf<String, String>()
+    private suspend fun fetchStocksWithMarketInfo(): Map<String, Pair<String, String>> {
+        val result = mutableMapOf<String, Pair<String, String>>()
         
         val kospiStocks = KRXStockListFetcher.fetchMarketStocksFromNaver("KOSPI")
         val kosdaqStocks = KRXStockListFetcher.fetchMarketStocksFromNaver("KOSDAQ")
         
-        kospiStocks.forEach { result[it] = "KOSPI" }
-        kosdaqStocks.forEach { result[it] = "KOSDAQ" }
+        // 네이버에서는 종목명을 못 가져오므로 빈 문자열
+        kospiStocks.forEach { result[it] = "" to "KOSPI" }
+        kosdaqStocks.forEach { result[it] = "" to "KOSDAQ" }
         
         return result
     }

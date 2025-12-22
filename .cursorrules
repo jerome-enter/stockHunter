@@ -31,11 +31,12 @@ StockHunter/
 - **Rate Limiter**: 초당 15건 (67ms 간격)
 
 ### 3. 종목 마스터
-- **파일 업로드만 사용**: 네이버/KRX 크롤링 금지
+- **파일 업로드 우선**: 네이버/KRX 크롤링 금지
 - **고정 길이 파싱**:
   - 위치 0-8: 단축코드 (앞 6자리 = 종목코드)
   - 위치 21-60: 한글종목명 (40자)
 - **DB 캐싱**: stock_master 테이블에 종목코드 + 종목명 저장
+- **종목명 동기화**: 파일 없을 시 한투 API로 자동 갱신 (백그라운드, 4분)
 
 ### 4. 스크리닝
 - **DBStockScreener 사용**: StockScreener(API 기반) 사용 금지
@@ -52,6 +53,7 @@ StockHunter/
 - POST `/api/v1/database/initialize` - DB 초기화 (2,500종목 × 4회 × 280일)
 - POST `/api/v1/database/update` - 일일 업데이트 (누락 기간 자동 채움)
 - POST `/api/v1/database/upload-stock-master` - 종목파일 업로드 (KOSPI/KOSDAQ)
+- POST `/api/v1/database/sync-stock-names` - 종목명 자동 동기화 (한투 API, 4분 소요)
 - POST `/api/v1/screen` - 스크리닝 (DB 280일 데이터 사용)
 
 ## 주요 흐름

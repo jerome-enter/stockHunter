@@ -19,7 +19,8 @@ private val logger = KotlinLogging.logger {}
  */
 class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.db") {
     
-    private var connection: Connection? = null
+    var connection: Connection? = null
+        private set
     
     init {
         logger.info { "Initializing PriceDatabase at $dbPath" }
@@ -309,22 +310,24 @@ class PriceDatabase(private val dbPath: String = "/root/.stockhunter/price_data.
     /**
      * 종목 마스터 전체 갱신
      * 
-     * @param stocks 종목 코드와 시장 정보 맵 (종목코드 -> 시장)
+     * @param stocks 종목 정보 맵 (종목코드 -> (종목명, 시장))
      */
-    fun refreshStockMaster(stocks: Map<String, String>) {
+    fun refreshStockMaster(stocks: Map<String, Pair<String, String>>) {
         connection?.prepareStatement("BEGIN TRANSACTION")?.execute()
         
         try {
             val insertSql = """
-                INSERT OR REPLACE INTO stock_master (stock_code, market, is_active, updated_at)
-                VALUES (?, ?, 1, ?)
+                INSERT OR REPLACE INTO stock_master (stock_code, stock_name, market, is_active, updated_at)
+                VALUES (?, ?, ?, 1, ?)
             """.trimIndent()
             
             connection?.prepareStatement(insertSql)?.use { stmt ->
-                stocks.forEach { (code, market) ->
+                stocks.forEach { (code, nameAndMarket) ->
+                    val (name, market) = nameAndMarket
                     stmt.setString(1, code)
-                    stmt.setString(2, market)
-                    stmt.setString(3, LocalDateTime.now().toString())
+                    stmt.setString(2, name)
+                    stmt.setString(3, market)
+                    stmt.setString(4, LocalDateTime.now().toString())
                     stmt.addBatch()
                 }
                 stmt.executeBatch()

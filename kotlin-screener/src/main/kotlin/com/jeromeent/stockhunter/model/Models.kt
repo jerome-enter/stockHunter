@@ -227,3 +227,25 @@ data class KISCurrentPriceOutput(
     val bps: String? = null,      // BPS
     val itewhol_loan_rmnd_ratem_name: String? = null  // 신용잔고율
 )
+
+/**
+ * 종목검색 응답
+ */
+@Serializable
+data class SearchInfoResponse(
+    val output: SearchInfoOutput? = null,
+    val rt_cd: String,           // 성공: "0"
+    val msg_cd: String,
+    val msg1: String
+)
+
+@Serializable
+data class SearchInfoOutput(
+    val pdno: String? = null,                    // 상품번호
+    val prdt_type_cd: String? = null,            // 상품유형코드
+    val prdt_name: String? = null,               // 상품명 (예: "삼성전자보통주")
+    val prdt_abrv_name: String? = null,          // 상품약칭명 (예: "삼성전자") ✅
+    val prdt_eng_name: String? = null,           // 상품영문명
+    val shtn_pdno: String? = null,               // 단축상품번호 (종목코드)
+    val std_pdno: String? = null                 // 표준상품번호 (ISIN)
+)

@@ -641,6 +641,68 @@ fun Route.databaseRoutes() {
             }
         }
         
+        // POST /api/v1/database/sync-stock-names - 종목명 동기화
+        post("/sync-stock-names") {
+            try {
+                @Serializable
+                data class SyncRequest(
+                    val appKey: String,
+                    val appSecret: String,
+                    val isProduction: Boolean = false
+                )
+                
+                val request = call.receive<SyncRequest>()
+                logger.info { "🔄 Starting stock name sync..." }
+                
+                // 즉시 응답
+                call.respond(HttpStatusCode.Accepted, mapOf("message" to "Sync started"))
+                
+                // 백그라운드 작업
+                Thread {
+                    val db = com.jeromeent.stockhunter.db.PriceDatabase()
+                    val client = KISApiClient(request.appKey, request.appSecret, request.isProduction)
+                    
+                    val codes = db.getAllStockCodes()
+                    var success = 0
+                    
+                    codes.forEachIndexed { idx, code ->
+                        try {
+                            Thread.sleep(70) // Rate limit (초당 14건)
+                            val name = kotlinx.coroutines.runBlocking { 
+                                client.getStockNameFromAPI(code) 
+                            }
+                            
+                            if (!name.isNullOrBlank()) {
+                                // UPDATE 쿼리 실행
+                                db.connection?.prepareStatement(
+                                    "UPDATE stock_master SET stock_name = ?, updated_at = ? WHERE stock_code = ?"
+                                )?.use { stmt ->
+                                    stmt.setString(1, name)
+                                    stmt.setString(2, java.time.LocalDateTime.now().toString())
+                                    stmt.setString(3, code)
+                                    stmt.executeUpdate()
+                                }
+                                success++
+                                if (success % 100 == 0) {
+                                    logger.info { "🔄 Progress: $success/${codes.size} (${(success * 100.0 / codes.size).toInt()}%)" }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.warn { "[$code] ${e.message}" }
+                        }
+                    }
+                    
+                    db.close()
+                    client.close()
+                    logger.info { "✅ Sync completed: $success/${codes.size}" }
+                }.start()
+                
+            } catch (e: Exception) {
+                logger.error(e) { "Sync failed" }
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = e.message ?: "Error"))
+            }
+        }
+        
         // POST /api/v1/database/upload-stock-master - 종목 마스터 파일 업로드
         post("/upload-stock-master") {
             try {
@@ -667,8 +729,9 @@ fun Route.databaseRoutes() {
                                     market
                                 )
                                 
-                                // DB에 저장 (List<Pair> -> Map 변환)
-                                val stocksMap = stocks.associate { it.first to it.second }
+                                // DB에 저장 (List<Triple> -> Map 변환)
+                                // Triple: (종목코드, 종목명, 시장)
+                                val stocksMap = stocks.associate { it.first to Pair(it.second, it.third) }
                                 database.refreshStockMaster(stocksMap)
                                 
                                 if (market == "KOSPI") {

@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.RateLimiter
 import com.jeromeent.stockhunter.model.KISPriceResponse
 import com.jeromeent.stockhunter.model.KISTokenResponse
 import com.jeromeent.stockhunter.model.KISCurrentPriceResponse
+import com.jeromeent.stockhunter.model.SearchInfoResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -373,7 +374,7 @@ class KISApiClient(
     }
     
     /**
-     * 종목코드로 종목명 조회
+     * 종목코드로 종목명 조회 (캐시 전용, 동기)
      * 
      * 1. 캐시된 마스터에서 찾기
      * 2. 하드코딩된 맵에서 찾기
@@ -389,6 +390,50 @@ class KISApiClient(
         
         // 하드코딩된 맵에서 찾기
         return stockNames[code] ?: code
+    }
+    
+    /**
+     * 종목검색 API로 종목명 조회
+     * 
+     * API: /uapi/domestic-stock/v1/quotations/search-info
+     * TR_ID: CTPF1604R
+     * 
+     * @param stockCode 종목코드 (6자리)
+     * @return 종목 약칭명 (예: "삼성전자", "SK하이닉스") 또는 null
+     */
+    suspend fun getStockNameFromAPI(stockCode: String): String? {
+        rateLimiter.acquire()
+        ensureAccessToken()
+        
+        try {
+            logger.debug { "Fetching stock name for $stockCode" }
+            
+            val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/search-info") {
+                headers {
+                    append("authorization", "Bearer $cachedToken")
+                    append("appkey", appKey)
+                    append("appsecret", appSecret)
+                    append("tr_id", "CTPF1604R")
+                    append("custtype", "P")
+                }
+                parameter("PRDT_TYPE_CD", "300")  // 주식
+                parameter("PDNO", stockCode)
+            }
+            
+            val result = response.body<SearchInfoResponse>()
+            
+            if (result.rt_cd == "0") {
+                // prdt_abrv_name (상품약칭명) 반환 (예: "삼성전자")
+                return result.output?.prdt_abrv_name?.takeIf { it.isNotBlank() }
+            } else {
+                logger.warn { "Search-info API error for $stockCode: ${result.msg1}" }
+                return null
+            }
+            
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to fetch stock name for $stockCode" }
+            return null
+        }
     }
     
     /**
