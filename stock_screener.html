@@ -731,9 +731,15 @@
         
         const data = await response.json();
         
-        // P, R 조건 체크
-        const pCheck = data.debtRatio !== null ? (data.debtRatio <= 200 ? '✅' : '❌') : '?';
-        const rCheck = data.reserveRatio !== null ? (data.reserveRatio >= 300 ? '✅' : '❌') : '?';
+        // P, R 조건 체크 (snake_case로 접근)
+        const debtRatio = data.debt_ratio ? parseFloat(data.debt_ratio) : null;
+        const rsrvRate = data.rsrv_rate ? parseFloat(data.rsrv_rate) : null;
+        const pCheck = debtRatio !== null ? (debtRatio <= 200 ? '✅' : '❌') : '?';
+        const rCheck = rsrvRate !== null ? (rsrvRate >= 300 ? '✅' : '❌') : '?';
+        
+        // EPS/BPS 정보 (참고용)
+        const eps = data.eps ? parseFloat(data.eps) : null;
+        const bps = data.bps ? parseFloat(data.bps) : null;
         
         // 종목명 옆에 간단하게 표시
         financialDiv.innerHTML = `
@@ -741,15 +747,20 @@
             <div class="bg-slate-700/50 px-3 py-1 rounded-md">
               <span class="text-white/60 text-xs">P: 부채비율</span>
               <span class="ml-2 font-mono text-sm ${pCheck === '✅' ? 'text-green-400' : pCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
-                ${data.debtRatio !== null ? data.debtRatio.toFixed(1) + '%' : 'N/A'} ${pCheck}
+                ${debtRatio !== null ? debtRatio.toFixed(1) + '%' : 'N/A'} ${pCheck}
               </span>
             </div>
             <div class="bg-slate-700/50 px-3 py-1 rounded-md">
               <span class="text-white/60 text-xs">R: 유보율</span>
               <span class="ml-2 font-mono text-sm ${rCheck === '✅' ? 'text-green-400' : rCheck === '❌' ? 'text-red-400' : 'text-gray-400'}">
-                ${data.reserveRatio !== null ? data.reserveRatio.toFixed(1) + '%' : 'N/A'} ${rCheck}
+                ${rsrvRate !== null ? rsrvRate.toFixed(1) + '%' : 'N/A'} ${rCheck}
               </span>
             </div>
+            ${eps !== null || bps !== null ? `
+            <div class="bg-slate-700/50 px-3 py-1 rounded-md text-xs text-white/60">
+              ${eps !== null ? `EPS: ${eps.toFixed(0)}` : ''} ${bps !== null ? `BPS: ${bps.toFixed(0)}` : ''}
+            </div>
+            ` : ''}
           </div>
         `;
         

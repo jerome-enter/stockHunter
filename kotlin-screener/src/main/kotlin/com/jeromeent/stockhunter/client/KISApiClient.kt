@@ -517,30 +517,36 @@ class KISApiClient(
         ensureAccessToken()
         
         return try {
-            val responseText = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-financial-ratio") {
+            // 재무비율 API가 작동하지 않으므로 현재가 시세 API 사용 (EPS, BPS만 제공)
+            val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-price") {
                 headers {
                     append("authorization", "Bearer $cachedToken")
                     append("appkey", appKey)
                     append("appsecret", appSecret)
-                    append("tr_id", "FHKST66430300") // 주식 재무비율 조회
+                    append("tr_id", "FHKST01010100") // 주식 현재가 시세
                 }
                 parameter("FID_COND_MRKT_DIV_CODE", "J") // 주식
                 parameter("FID_INPUT_ISCD", code)
-            }.bodyAsText()
+            }.body<KISCurrentPriceResponse>()
             
-            logger.info { "[$code] Financial API raw response: $responseText" }
+            logger.info { "[$code] Successfully fetched current price for financial data, rt_cd: ${response.rt_cd}" }
             
-            // 재무비율 API가 정확하지 않으므로 기본값 반환
-            // TODO: 올바른 TR_ID 확인 후 실제 파싱 필요
-            // 임시로 "N/A" 표시를 위해 null 값으로 구성된 객체 반환
-            FinancialRatioOutput(
-                debtRatio = null,
-                reserveRatio = null,
-                eps = null,
-                bps = null,
-                roe = null,
-                roa = null
-            )
+            val output = response.output
+            if (output != null && response.rt_cd == "0") {
+                // EPS, BPS만 제공 가능, 부채비율/유보율은 별도 API 필요
+                logger.info { "[$code] Financial data - eps: ${output.eps}, bps: ${output.bps}, per: ${output.per}, pbr: ${output.pbr}" }
+                FinancialRatioOutput(
+                    debt_ratio = null, // 현재가 API에서 제공 안 됨
+                    rsrv_rate = null,  // 현재가 API에서 제공 안 됨
+                    eps = output.eps,
+                    bps = output.bps,
+                    roe = null,
+                    roa = null
+                )
+            } else {
+                logger.warn { "[$code] No output or error in current price response, rt_cd: ${response.rt_cd}, msg: ${response.msg1}" }
+                null
+            }
         } catch (e: Exception) {
             logger.error(e) { "[$code] Error fetching financial ratio" }
             null
