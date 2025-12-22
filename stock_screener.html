@@ -1641,6 +1641,12 @@
                     ${!app.conditions.bbEnabled ? 'disabled' : ''} class="w-4 h-4">
                   <span>장기 투자 (30일, ±3σ) - 안정적</span>
                 </label>
+                <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                  <input type="radio" name="bbPreset" value="trend" 
+                    ${app.conditions.bbPeriod === 40 && app.conditions.bbMultiplier === 2 ? 'checked' : ''}
+                    ${!app.conditions.bbEnabled ? 'disabled' : ''} class="w-4 h-4">
+                  <span>추세돌파기준 (40일, ±2σ) - 중장기 추세</span>
+                </label>
               </div>
               
               <select id="bbPosition" class="px-3 py-1 bg-white/20 border border-white/30 rounded text-white text-sm"
@@ -1900,7 +1906,8 @@
           const presets = {
             short: { period: 10, multiplier: 1.5 },
             normal: { period: 20, multiplier: 2 },
-            long: { period: 30, multiplier: 3 }
+            long: { period: 30, multiplier: 3 },
+            trend: { period: 40, multiplier: 2 }
           };
           const preset = presets[e.target.value];
           if (preset) {
