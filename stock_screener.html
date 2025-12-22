@@ -6,6 +6,9 @@
   <title>제롬과 함께하는 행복 주식 검색기</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
   <style>
@@ -106,6 +109,10 @@
             <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
               <input type="checkbox" id="showIchimoku" class="w-4 h-4" onchange="toggleIndicator()">
               <span>일목균형표 (구름대)</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showCloseLine" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>종가 라인</span>
             </label>
           </div>
           
@@ -893,6 +900,7 @@
       const showSupport = document.getElementById('showSupport').checked;
       const showResistance = document.getElementById('showResistance').checked;
       const showIchimoku = document.getElementById('showIchimoku').checked;
+      const showCloseLine = document.getElementById('showCloseLine')?.checked || false;
       
       // 이동평균 계산
       const ma60 = calculateMA(prices, 60);
@@ -909,19 +917,55 @@
       const support = calculateSupport(lows);
       const resistance = calculateResistance(highs);
       
+      // 캔들스틱 데이터 구성
+      const candlestickData = [];
+      for (let i = 0; i < sortedData.length; i++) {
+        const d = sortedData[i];
+        candlestickData.push({
+          x: new Date(labels[i]).getTime(), // timestamp로 변환
+          o: d.open,
+          h: d.high,
+          l: d.low,
+          c: d.close
+        });
+      }
+      
       // 데이터셋 구성
       const datasets = [
+        // 캔들스틱
         {
+          label: '가격',
+          type: 'candlestick',
+          data: candlestickData,
+          color: {
+            up: 'rgb(239, 68, 68)',     // 양봉: 빨강
+            down: 'rgb(59, 130, 246)',   // 음봉: 파랑
+            unchanged: 'rgb(156, 163, 175)' // 변동없음: 회색
+          },
+          borderColor: {
+            up: 'rgb(239, 68, 68)',
+            down: 'rgb(59, 130, 246)',
+            unchanged: 'rgb(156, 163, 175)'
+          },
+          yAxisID: 'y',
+          order: 2
+        }
+      ];
+      
+      // 종가 라인 (옵션)
+      if (showCloseLine) {
+        datasets.push({
           label: '종가',
+          type: 'line',
           data: prices,
           borderColor: 'rgb(255, 255, 255)',
-          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          borderWidth: 2,
+          backgroundColor: 'transparent',
+          borderWidth: 1,
           pointRadius: 0,
           yAxisID: 'y',
           order: 1
-        }
-      ];
+        });
+      }
       
       // 이동평균선
       if (showMA60) {
@@ -1039,7 +1083,7 @@
       
       // 가격 차트 생성
       priceChartInstance = new Chart(priceCtx, {
-        type: 'line',
+        type: 'line', // 기본 타입 line (datasets에서 개별 타입 지정)
         data: {
           labels: labels,
           datasets: datasets
@@ -1091,6 +1135,10 @@
           },
           scales: {
             x: {
+              type: 'time',
+              time: {
+                unit: 'day'
+              },
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.6)',
                 maxTicksLimit: 15
@@ -1100,6 +1148,16 @@
             y: {
               type: 'linear',
               position: 'left',
+              min: function(context) {
+                // 실제 데이터의 최소값 계산
+                const allLows = sortedData.map(d => d.low).filter(v => v != null);
+                return Math.min(...allLows) * 0.95; // 5% 여유
+              },
+              max: function(context) {
+                // 실제 데이터의 최대값 계산
+                const allHighs = sortedData.map(d => d.high).filter(v => v != null);
+                return Math.max(...allHighs) * 1.05; // 5% 여유
+              },
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.8)',
                 callback: function(value) {
