@@ -6,6 +6,7 @@
   <title>제롬과 함께하는 행복 주식 검색기</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
   <style>
     body {
       background: linear-gradient(to bottom right, #0f172a, #1e3a8a, #0f172a);
@@ -58,7 +59,7 @@
 
   <!-- 차트 팝업 모달 -->
   <div id="chartModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-    <div class="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/20 rounded-2xl p-6 max-w-6xl w-full max-h-[90vh] overflow-auto">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 border border-white/20 rounded-2xl p-6 max-w-6xl w-full overflow-y-auto" style="max-height: 90vh;">
       <!-- 헤더 -->
       <div class="flex justify-between items-center mb-6">
         <div>
@@ -68,9 +69,63 @@
         <button onclick="closeChart()" class="text-white/60 hover:text-white text-3xl leading-none">&times;</button>
       </div>
       
-      <!-- 차트 -->
+      <!-- 차트 필터 및 줌 컨트롤 -->
       <div class="bg-slate-800/50 rounded-xl p-4 mb-4">
-        <canvas id="stockChart" height="400"></canvas>
+        <div class="flex justify-between items-center mb-4">
+          <div class="flex flex-wrap gap-3">
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showMA60" checked class="w-4 h-4" onchange="toggleIndicator()">
+              <span>60일선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showMA112" checked class="w-4 h-4" onchange="toggleIndicator()">
+              <span>112일선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showMA224" checked class="w-4 h-4" onchange="toggleIndicator()">
+              <span>224일선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showTrendline" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>추세선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showSupport" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>지지선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showResistance" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>저항선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showIchimoku" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>일목균형표 (구름대)</span>
+            </label>
+          </div>
+          
+          <!-- 줌 컨트롤 -->
+          <div class="flex gap-2">
+            <button onclick="zoomIn()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
+              +
+            </button>
+            <button onclick="zoomOut()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-bold">
+              −
+            </button>
+            <button onclick="resetZoom()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm">
+              초기화
+            </button>
+          </div>
+        </div>
+        
+        <!-- 가격 차트 -->
+        <div style="height: 350px; position: relative;" class="mb-4">
+          <canvas id="stockChart"></canvas>
+        </div>
+        
+        <!-- 거래량 차트 -->
+        <div style="height: 100px; position: relative;">
+          <canvas id="volumeChart"></canvas>
+        </div>
       </div>
       
       <!-- 통계 정보 -->
@@ -96,9 +151,118 @@
   </div>
 
   <script>
+    // 간단한 암호화/복호화 (브라우저 고유 정보 기반)
+    function getEncryptionKey() {
+      // 브라우저 고유 정보로 키 생성 (userAgent + 고정 salt)
+      const salt = 'StockHunter2025_KIS_API_KEY_PROTECTION';
+      const raw = navigator.userAgent + salt + screen.width + screen.height;
+      let hash = 0;
+      for (let i = 0; i < raw.length; i++) {
+        const char = raw.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return Math.abs(hash).toString(36);
+    }
+    
+    // XOR 암호화
+    function encrypt(text) {
+      if (!text) return '';
+      const key = getEncryptionKey();
+      let result = '';
+      for (let i = 0; i < text.length; i++) {
+        result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+      }
+      return btoa(result); // Base64 인코딩
+    }
+    
+    // XOR 복호화
+    function decrypt(encoded) {
+      if (!encoded) return '';
+      try {
+        const text = atob(encoded); // Base64 디코딩
+        const key = getEncryptionKey();
+        let result = '';
+        for (let i = 0; i < text.length; i++) {
+          result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+        }
+        return result;
+      } catch (e) {
+        console.error('Decryption failed:', e);
+        return '';
+      }
+    }
+    
+    // LocalStorage에서 API 키 로드 (암호화된 값 복호화)
+    function loadApiKeys() {
+      const encryptedKey = localStorage.getItem('kis_app_key_enc');
+      const encryptedSecret = localStorage.getItem('kis_app_secret_enc');
+      
+      return {
+        appKey: encryptedKey ? decrypt(encryptedKey) : '',
+        appSecret: encryptedSecret ? decrypt(encryptedSecret) : '',
+        isProduction: localStorage.getItem('kis_is_production') === 'true'
+      };
+    }
+    
+    // LocalStorage에 API 키 저장 (암호화)
+    function saveApiKeys(appKey, appSecret, isProduction) {
+      if (appKey) {
+        const encrypted = encrypt(appKey);
+        localStorage.setItem('kis_app_key_enc', encrypted);
+      }
+      if (appSecret) {
+        const encrypted = encrypt(appSecret);
+        localStorage.setItem('kis_app_secret_enc', encrypted);
+      }
+      localStorage.setItem('kis_is_production', isProduction.toString());
+    }
+    
+    // API 키 수동 저장
+    function saveApiKeysManual() {
+      const appKey = document.getElementById('appKey').value.trim();
+      const appSecret = document.getElementById('appSecret').value.trim();
+      const isProduction = document.getElementById('isProduction')?.checked ?? true;
+      
+      if (!appKey || !appSecret) {
+        alert('❌ APP KEY와 APP SECRET을 입력해주세요!');
+        return;
+      }
+      
+      saveApiKeys(appKey, appSecret, isProduction);
+      app.appKey = appKey;
+      app.appSecret = appSecret;
+      app.isProduction = isProduction;
+      
+      render();
+      alert('✅ API 키가 암호화되어 안전하게 저장되었습니다!\n\n🔐 XOR 암호화 + Base64 인코딩\n\n다음 방문 시 자동으로 불러옵니다.');
+    }
+    
+    // API 키 삭제
+    function clearApiKeys() {
+      if (confirm('⚠️ 저장된 API 키를 삭제하시겠습니까?')) {
+        // 암호화된 키 삭제
+        localStorage.removeItem('kis_app_key_enc');
+        localStorage.removeItem('kis_app_secret_enc');
+        localStorage.removeItem('kis_is_production');
+        // 레거시 키도 삭제 (이전 버전 호환성)
+        localStorage.removeItem('kis_app_key');
+        localStorage.removeItem('kis_app_secret');
+        
+        app.appKey = '';
+        app.appSecret = '';
+        app.isProduction = true;
+        render();
+        alert('✅ API 키가 삭제되었습니다.');
+      }
+    }
+    
+    const savedKeys = loadApiKeys();
     const app = {
       selectedMarket: 'domestic',  // domestic or us
-      isProduction: true,   // 실전투자 여부 (기본값)
+      isProduction: savedKeys.isProduction,   // 실전투자 여부 (저장된 값 또는 기본값)
+      appKey: savedKeys.appKey,
+      appSecret: savedKeys.appSecret,
       searchDomestic: true,   // 국내주식 검색 여부
       searchUS: false,        // 해외주식 검색 여부
       conditions: {
@@ -433,7 +597,10 @@
     }
     
     // 차트 관련 변수
-    let chartInstance = null;
+    let priceChartInstance = null;
+    let volumeChartInstance = null;
+    let chartData = null;
+    let chartStockName = null;
     
     // 차트 표시
     async function showChart(stockCode, stockName) {
@@ -451,8 +618,12 @@
         
         const data = await response.json();
         
+        // 데이터 저장 (토글용)
+        chartData = data;
+        chartStockName = stockName;
+        
         // 차트 그리기
-        drawChart(data, stockName);
+        drawCharts(data, stockName);
         
         // 통계 정보 업데이트
         updateChartStats(data);
@@ -463,25 +634,70 @@
       }
     }
     
+    // 지표 토글
+    function toggleIndicator() {
+      if (!chartData) return;
+      drawCharts(chartData, chartStockName);
+    }
+    
+    // 줌 인
+    function zoomIn() {
+      if (priceChartInstance) {
+        priceChartInstance.zoom(1.2);
+      }
+      if (volumeChartInstance) {
+        volumeChartInstance.zoom(1.2);
+      }
+    }
+    
+    // 줌 아웃
+    function zoomOut() {
+      if (priceChartInstance) {
+        priceChartInstance.zoom(0.8);
+      }
+      if (volumeChartInstance) {
+        volumeChartInstance.zoom(0.8);
+      }
+    }
+    
+    // 줌 초기화
+    function resetZoom() {
+      if (priceChartInstance) {
+        priceChartInstance.resetZoom();
+      }
+      if (volumeChartInstance) {
+        volumeChartInstance.resetZoom();
+      }
+    }
+    
     // 차트 닫기
     function closeChart() {
       const modal = document.getElementById('chartModal');
       modal.classList.add('hidden');
       
       // 기존 차트 파괴
-      if (chartInstance) {
-        chartInstance.destroy();
-        chartInstance = null;
+      if (priceChartInstance) {
+        priceChartInstance.destroy();
+        priceChartInstance = null;
+      }
+      if (volumeChartInstance) {
+        volumeChartInstance.destroy();
+        volumeChartInstance = null;
       }
     }
     
-    // 차트 그리기
-    function drawChart(data, stockName) {
-      if (chartInstance) {
-        chartInstance.destroy();
+    // 차트 그리기 (가격 + 거래량)
+    function drawCharts(data, stockName) {
+      // 기존 차트 파괴
+      if (priceChartInstance) {
+        priceChartInstance.destroy();
+      }
+      if (volumeChartInstance) {
+        volumeChartInstance.destroy();
       }
       
-      const ctx = document.getElementById('stockChart').getContext('2d');
+      const priceCtx = document.getElementById('stockChart').getContext('2d');
+      const volumeCtx = document.getElementById('volumeChart').getContext('2d');
       
       // 데이터 정렬 (오래된 것부터)
       const sortedData = [...data].reverse();
@@ -489,63 +705,168 @@
       // 날짜와 가격 추출
       const labels = sortedData.map(d => d.date);
       const prices = sortedData.map(d => d.close);
+      const highs = sortedData.map(d => d.high);
+      const lows = sortedData.map(d => d.low);
       const volumes = sortedData.map(d => d.volume);
+      
+      // 체크박스 상태
+      const showMA60 = document.getElementById('showMA60').checked;
+      const showMA112 = document.getElementById('showMA112').checked;
+      const showMA224 = document.getElementById('showMA224').checked;
+      const showTrendline = document.getElementById('showTrendline').checked;
+      const showSupport = document.getElementById('showSupport').checked;
+      const showResistance = document.getElementById('showResistance').checked;
+      const showIchimoku = document.getElementById('showIchimoku').checked;
       
       // 이동평균 계산
       const ma60 = calculateMA(prices, 60);
       const ma112 = calculateMA(prices, 112);
       const ma224 = calculateMA(prices, 224);
       
-      chartInstance = new Chart(ctx, {
+      // 일목균형표 계산
+      const ichimoku = calculateIchimoku(highs, lows, prices);
+      
+      // 추세선 계산
+      const trendline = calculateTrendline(prices);
+      
+      // 지지선/저항선 계산
+      const support = calculateSupport(lows);
+      const resistance = calculateResistance(highs);
+      
+      // 데이터셋 구성
+      const datasets = [
+        {
+          label: '종가',
+          data: prices,
+          borderColor: 'rgb(255, 255, 255)',
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 2,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 1
+        }
+      ];
+      
+      // 이동평균선
+      if (showMA60) {
+        datasets.push({
+          label: '60일선',
+          data: ma60,
+          borderColor: 'rgb(59, 130, 246)',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 1
+        });
+      }
+      
+      if (showMA112) {
+        datasets.push({
+          label: '112일선',
+          data: ma112,
+          borderColor: 'rgb(168, 85, 247)',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 1
+        });
+      }
+      
+      if (showMA224) {
+        datasets.push({
+          label: '224일선',
+          data: ma224,
+          borderColor: 'rgb(239, 68, 68)',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 1
+        });
+      }
+      
+      // 일목균형표 구름대
+      if (showIchimoku) {
+        // 선행스팬1
+        datasets.push({
+          label: '선행스팬1',
+          data: ichimoku.senkou_span_a,
+          borderColor: 'rgba(34, 197, 94, 0.6)',
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 3,
+          fill: '+1' // 다음 데이터셋과 사이 채우기
+        });
+        
+        // 선행스팬2
+        datasets.push({
+          label: '선행스팬2',
+          data: ichimoku.senkou_span_b,
+          borderColor: 'rgba(239, 68, 68, 0.6)',
+          backgroundColor: 'rgba(147, 51, 234, 0.15)', // 보라색 반투명
+          borderWidth: 1,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 3,
+          fill: '-1' // 이전 데이터셋과 사이 채우기
+        });
+      }
+      
+      // 추세선
+      if (showTrendline) {
+        datasets.push({
+          label: '추세선',
+          data: trendline,
+          borderColor: 'rgb(251, 191, 36)',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 2
+        });
+      }
+      
+      // 지지선
+      if (showSupport) {
+        datasets.push({
+          label: '지지선',
+          data: support,
+          borderColor: 'rgb(34, 197, 94)',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [10, 5],
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 2
+        });
+      }
+      
+      // 저항선
+      if (showResistance) {
+        datasets.push({
+          label: '저항선',
+          data: resistance,
+          borderColor: 'rgb(239, 68, 68)',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [10, 5],
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 2
+        });
+      }
+      
+      // 가격 차트 생성
+      priceChartInstance = new Chart(priceCtx, {
         type: 'line',
         data: {
           labels: labels,
-          datasets: [
-            {
-              label: '종가',
-              data: prices,
-              borderColor: 'rgb(255, 255, 255)',
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              borderWidth: 2,
-              pointRadius: 0,
-              yAxisID: 'y'
-            },
-            {
-              label: '60일선',
-              data: ma60,
-              borderColor: 'rgb(59, 130, 246)',
-              backgroundColor: 'transparent',
-              borderWidth: 1.5,
-              pointRadius: 0,
-              yAxisID: 'y'
-            },
-            {
-              label: '112일선',
-              data: ma112,
-              borderColor: 'rgb(168, 85, 247)',
-              backgroundColor: 'transparent',
-              borderWidth: 1.5,
-              pointRadius: 0,
-              yAxisID: 'y'
-            },
-            {
-              label: '224일선',
-              data: ma224,
-              borderColor: 'rgb(239, 68, 68)',
-              backgroundColor: 'transparent',
-              borderWidth: 1.5,
-              pointRadius: 0,
-              yAxisID: 'y'
-            },
-            {
-              label: '거래량',
-              data: volumes,
-              type: 'bar',
-              backgroundColor: 'rgba(34, 197, 94, 0.5)',
-              yAxisID: 'y1',
-              order: 2
-            }
-          ]
+          datasets: datasets
         },
         options: {
           responsive: true,
@@ -556,19 +877,36 @@
           },
           plugins: {
             legend: {
-              labels: { color: 'white' }
+              labels: { color: 'white', font: { size: 10 } },
+              onClick: null
             },
             tooltip: {
               backgroundColor: 'rgba(0, 0, 0, 0.8)',
               titleColor: 'white',
               bodyColor: 'white'
+            },
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x',
+                modifierKey: 'ctrl'
+              },
+              zoom: {
+                wheel: {
+                  enabled: false
+                },
+                pinch: {
+                  enabled: false
+                },
+                mode: 'x'
+              }
             }
           },
           scales: {
             x: {
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.6)',
-                maxTicksLimit: 10
+                maxTicksLimit: 15
               },
               grid: { color: 'rgba(255, 255, 255, 0.1)' }
             },
@@ -577,16 +915,98 @@
               position: 'left',
               ticks: { color: 'rgba(255, 255, 255, 0.8)' },
               grid: { color: 'rgba(255, 255, 255, 0.1)' }
-            },
-            y1: {
-              type: 'linear',
-              position: 'right',
-              ticks: { color: 'rgba(34, 197, 94, 0.8)' },
-              grid: { display: false }
             }
           }
         }
       });
+      
+      // 거래량 차트 생성 (별도)
+      volumeChartInstance = new Chart(volumeCtx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '거래량',
+            data: volumes,
+            backgroundColor: volumes.map((v, i) => {
+              if (i === 0) return 'rgba(34, 197, 94, 0.6)';
+              return prices[i] >= prices[i-1] ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)';
+            }),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              titleColor: 'white',
+              bodyColor: 'white'
+            },
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x',
+                modifierKey: 'ctrl'
+              },
+              zoom: {
+                wheel: {
+                  enabled: false
+                },
+                pinch: {
+                  enabled: false
+                },
+                mode: 'x'
+              },
+              limits: {
+                x: {min: 'original', max: 'original'}
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { 
+                color: 'rgba(255, 255, 255, 0.6)',
+                maxTicksLimit: 15
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            y: {
+              type: 'linear',
+              ticks: { 
+                color: 'rgba(34, 197, 94, 0.8)',
+                callback: function(value) {
+                  if (value >= 1000000) return (value/1000000).toFixed(1) + 'M';
+                  if (value >= 1000) return (value/1000).toFixed(0) + 'K';
+                  return value;
+                }
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.05)' }
+            }
+          }
+        }
+      });
+      
+      // 두 차트의 줌/팬 동기화
+      priceChartInstance.options.plugins.zoom.pan.onPan = function({chart}) {
+        volumeChartInstance.options.scales.x.min = chart.scales.x.min;
+        volumeChartInstance.options.scales.x.max = chart.scales.x.max;
+        volumeChartInstance.update('none');
+      };
+      
+      volumeChartInstance.options.plugins.zoom.pan.onPan = function({chart}) {
+        priceChartInstance.options.scales.x.min = chart.scales.x.min;
+        priceChartInstance.options.scales.x.max = chart.scales.x.max;
+        priceChartInstance.update('none');
+      };
     }
     
     // 이동평균 계산
@@ -600,6 +1020,93 @@
           result.push(sum / period);
         }
       }
+      return result;
+    }
+    
+    // 일목균형표 계산
+    function calculateIchimoku(highs, lows, prices) {
+      const senkou_span_a = [];
+      const senkou_span_b = [];
+      
+      for (let i = 0; i < prices.length; i++) {
+        if (i < 26) {
+          senkou_span_a.push(null);
+          senkou_span_b.push(null);
+          continue;
+        }
+        
+        // 전환선 (9일): (9일 최고 + 9일 최저) / 2
+        const tenkan = (Math.max(...highs.slice(i-8, i+1)) + Math.min(...lows.slice(i-8, i+1))) / 2;
+        
+        // 기준선 (26일): (26일 최고 + 26일 최저) / 2
+        const kijun = (Math.max(...highs.slice(i-25, i+1)) + Math.min(...lows.slice(i-25, i+1))) / 2;
+        
+        // 선행스팬1: (전환선 + 기준선) / 2, 26일 선행
+        senkou_span_a.push((tenkan + kijun) / 2);
+        
+        // 선행스팬2: (52일 최고 + 52일 최저) / 2, 26일 선행
+        if (i >= 52) {
+          const span_b = (Math.max(...highs.slice(i-51, i+1)) + Math.min(...lows.slice(i-51, i+1))) / 2;
+          senkou_span_b.push(span_b);
+        } else {
+          senkou_span_b.push(null);
+        }
+      }
+      
+      return { senkou_span_a, senkou_span_b };
+    }
+    
+    // 추세선 계산 (선형 회귀)
+    function calculateTrendline(prices) {
+      const n = prices.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      
+      for (let i = 0; i < n; i++) {
+        if (prices[i] !== null) {
+          sumX += i;
+          sumY += prices[i];
+          sumXY += i * prices[i];
+          sumXX += i * i;
+        }
+      }
+      
+      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+      
+      return prices.map((_, i) => slope * i + intercept);
+    }
+    
+    // 지지선 계산 (최근 60일 최저가 기준)
+    function calculateSupport(lows) {
+      const result = [];
+      const period = 60;
+      
+      for (let i = 0; i < lows.length; i++) {
+        if (i < period) {
+          result.push(null);
+        } else {
+          const min = Math.min(...lows.slice(i - period, i + 1));
+          result.push(min);
+        }
+      }
+      
+      return result;
+    }
+    
+    // 저항선 계산 (최근 60일 최고가 기준)
+    function calculateResistance(highs) {
+      const result = [];
+      const period = 60;
+      
+      for (let i = 0; i < highs.length; i++) {
+        if (i < period) {
+          result.push(null);
+        } else {
+          const max = Math.max(...highs.slice(i - period, i + 1));
+          result.push(max);
+        }
+      }
+      
       return result;
     }
     
@@ -848,17 +1355,41 @@
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label class="block text-sm font-medium text-blue-200 mb-2">APP KEY</label>
+              <label class="block text-sm font-medium text-blue-200 mb-2">
+                APP KEY
+                ${app.appKey ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : ''}
+              </label>
               <input type="text" id="appKey" value="${app.appKey}" placeholder="APP KEY 입력"
                 class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
             <div>
-              <label class="block text-sm font-medium text-blue-200 mb-2">APP SECRET</label>
+              <label class="block text-sm font-medium text-blue-200 mb-2">
+                APP SECRET
+                ${app.appSecret ? '<span class="text-green-400 text-xs ml-2">✓ 저장됨</span>' : ''}
+              </label>
               <input type="password" id="appSecret" value="${app.appSecret}" placeholder="APP SECRET 입력"
                 class="w-full px-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
           </div>
+          
+          <div class="flex gap-2 mb-4">
+            <button onclick="saveApiKeysManual()" 
+              class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+              💾 API 키 저장
+            </button>
+            ${app.appKey || app.appSecret ? `
+              <button onclick="clearApiKeys()" 
+                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                🗑️ 저장된 키 삭제
+              </button>
+            ` : ''}
+          </div>
+          
           <div class="text-sm text-blue-200 bg-blue-900/30 p-3 rounded-lg mb-4">
+            <strong>🔐 보안:</strong> API 키는 XOR 암호화 + Base64 인코딩되어 브라우저에 저장됩니다.
+            <br>
+            <strong>💡 팁:</strong> 다음 방문 시 자동으로 불러옵니다. 공용 PC에서는 사용 후 삭제하세요.
+            <br>
             <strong>API 키 발급:</strong> 한국투자증권 홈페이지 → KIS Developers → 앱 등록
           </div>
           
