@@ -219,12 +219,18 @@ class StockScreener(
         }
         
         // 9. 시가총액/재무 비율 필터링
-        val marketCap = basicInfo?.hts_avls?.toLongOrDefault()
+        val marketCap = basicInfo?.hts_avls?.toLongOrDefault() // API는 억원 단위로 제공
         val per = basicInfo?.per?.toDoubleOrDefault()
         val pbr = basicInfo?.pbr?.toDoubleOrDefault()
         
         if (condition.marketCapEnabled && marketCap != null) {
-            if (marketCap !in condition.marketCapMin..condition.marketCapMax) {
+            // 한투 API는 억원 단위로 제공되므로 원 단위로 변환하여 비교
+            val marketCapInWon = marketCap * 100_000_000L // 억원 → 원
+            
+            logger.debug { "[$code] Market cap check - value: ${marketCap} hundred million won ($marketCapInWon won), min: ${condition.marketCapMin}, max: ${condition.marketCapMax}" }
+            
+            if (marketCapInWon !in condition.marketCapMin..condition.marketCapMax) {
+                logger.debug { "[$code] Excluded by market cap: $marketCapInWon won not in range ${condition.marketCapMin}~${condition.marketCapMax}" }
                 return null
             }
         }

@@ -314,7 +314,11 @@ class DBStockScreener(
                 pbr = basicInfo?.pbr?.toDoubleOrDefault()
                 
                 if (condition.marketCapEnabled && marketCap != null) {
-                    if (marketCap !in condition.marketCapMin..condition.marketCapMax) {
+                    // 한투 API는 억원 단위로 제공되므로 원 단위로 변환
+                    val marketCapInWon = marketCap * 100000000L // 억원 → 원
+                    logger.info { "[$code] Market cap check - value: ${marketCap} hundred million won ($marketCapInWon won), min: ${condition.marketCapMin}, max: ${condition.marketCapMax}" }
+                    if (marketCapInWon !in condition.marketCapMin..condition.marketCapMax) {
+                        logger.debug { "[$code] Excluded: market cap $marketCapInWon not in range ${condition.marketCapMin}~${condition.marketCapMax}" }
                         return null
                     }
                 }
