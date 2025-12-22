@@ -153,4 +153,72 @@ object TechnicalIndicators {
         
         return sqrt(variance)
     }
+    
+    /**
+     * 일목균형표 계산
+     * @param highs 고가 리스트 (최신 데이터가 앞에)
+     * @param lows 저가 리스트 (최신 데이터가 앞에)
+     * @param closes 종가 리스트 (최신 데이터가 앞에)
+     * @param tenkan 전환선 기간 (기본 9일)
+     * @param kijun 기준선 기간 (기본 26일)
+     * @param senkou 선행스팬 기간 (기본 52일)
+     * @return 일목균형표 데이터 또는 null
+     */
+    data class IchimokuCloud(
+        val tenkanSen: Double,      // 전환선: (9일 최고 + 최저) / 2
+        val kijunSen: Double,        // 기준선: (26일 최고 + 최저) / 2
+        val senkouSpanA: Double,     // 선행스팬1: (전환선 + 기준선) / 2, 26일 선행
+        val senkouSpanB: Double,     // 선행스팬2: (52일 최고 + 최저) / 2, 26일 선행
+        val chikouSpan: Double       // 후행스팬: 당일 종가, 26일 후행
+    )
+    
+    fun calculateIchimoku(
+        highs: List<Double>,
+        lows: List<Double>,
+        closes: List<Double>,
+        tenkan: Int = 9,
+        kijun: Int = 26,
+        senkou: Int = 52
+    ): IchimokuCloud? {
+        // 최소 52일 데이터 필요
+        if (highs.size < senkou || lows.size < senkou || closes.size < senkou) return null
+        
+        // 전환선: (9일 최고 + 최저) / 2
+        val tenkanMax = highs.take(tenkan).maxOrNull() ?: return null
+        val tenkanMin = lows.take(tenkan).minOrNull() ?: return null
+        val tenkanSen = (tenkanMax + tenkanMin) / 2.0
+        
+        // 기준선: (26일 최고 + 최저) / 2
+        val kijunMax = highs.take(kijun).maxOrNull() ?: return null
+        val kijunMin = lows.take(kijun).minOrNull() ?: return null
+        val kijunSen = (kijunMax + kijunMin) / 2.0
+        
+        // 선행스팬1: (전환선 + 기준선) / 2 (26일 선행이므로 현재 값 사용)
+        val senkouSpanA = (tenkanSen + kijunSen) / 2.0
+        
+        // 선행스팬2: (52일 최고 + 최저) / 2 (26일 선행이므로 현재 값 사용)
+        val senkouMax = highs.take(senkou).maxOrNull() ?: return null
+        val senkouMin = lows.take(senkou).minOrNull() ?: return null
+        val senkouSpanB = (senkouMax + senkouMin) / 2.0
+        
+        // 후행스팬: 당일 종가 (26일 후행이므로 현재 종가 사용)
+        val chikouSpan = closes.firstOrNull() ?: return null
+        
+        return IchimokuCloud(
+            tenkanSen = tenkanSen,
+            kijunSen = kijunSen,
+            senkouSpanA = senkouSpanA,
+            senkouSpanB = senkouSpanB,
+            chikouSpan = chikouSpan
+        )
+    }
+    
+    /**
+     * 일목균형표 구름대 위 체크
+     * N 조건: 중가 >= 선행스팬2(기준)
+     */
+    fun isAboveIchimokuCloud(currentPrice: Double, ichimoku: IchimokuCloud): Boolean {
+        // 선행스팬2가 기준 (구름대의 하한 또는 상한)
+        return currentPrice >= ichimoku.senkouSpanB
+    }
 }

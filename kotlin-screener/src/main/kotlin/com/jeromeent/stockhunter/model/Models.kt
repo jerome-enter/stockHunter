@@ -157,6 +157,12 @@ data class ScreeningCondition(
     // 이평선 정배열
     val maAlignment: Boolean = false,
     
+    // N: 일목균형표 구름대 위
+    val ichimokuEnabled: Boolean = false,
+    val ichimokuTenkan: Int = 9,
+    val ichimokuKijun: Int = 26,
+    val ichimokuSenkou: Int = 52,
+    
     // 종목 코드 (비어있으면 전체 검색)
     val targetCodes: List<String> = emptyList()
 )

@@ -109,6 +109,8 @@ class DBStockScreener(
         
         // 3. 가격 및 거래량 데이터
         val prices = priceData.map { it.close }
+        val highs = priceData.map { it.high }
+        val lows = priceData.map { it.low }
         val volumes = priceData.map { it.volume }
         
         val currentPrice = prices.firstOrNull() ?: return null
@@ -121,6 +123,16 @@ class DBStockScreener(
         val ma60 = TechnicalIndicators.calculateSMA(prices, 60)
         val ma112 = TechnicalIndicators.calculateSMA(prices, 112)
         val ma224 = TechnicalIndicators.calculateSMA(prices, 224)
+        
+        // 일목균형표 계산
+        val ichimoku = if (condition.ichimokuEnabled) {
+            TechnicalIndicators.calculateIchimoku(
+                highs, lows, prices,
+                condition.ichimokuTenkan,
+                condition.ichimokuKijun,
+                condition.ichimokuSenkou
+            )
+        } else null
         
         // 5. 이동평균선 필터링
         // J: 20일선 비율 체크
@@ -272,6 +284,20 @@ class DBStockScreener(
                     logger.debug { "[$code] Excluded: high/low range G=$highToLowChange%, H=$lowToHighChange% not in ${condition.highLowRangeMin}~${condition.highLowRangeMax}%" }
                     return null
                 }
+            }
+        }
+        
+        // N: 일목균형표 구름대 위 체크
+        if (condition.ichimokuEnabled) {
+            if (ichimoku == null) {
+                logger.debug { "[$code] Excluded: insufficient data for Ichimoku" }
+                return null
+            }
+            
+            // 중가 >= 선행스팬2 (구름대 위)
+            if (!TechnicalIndicators.isAboveIchimokuCloud(currentPrice, ichimoku)) {
+                logger.debug { "[$code] Excluded: price $currentPrice not above Ichimoku cloud (SpanB=${ichimoku.senkouSpanB})" }
+                return null
             }
         }
         

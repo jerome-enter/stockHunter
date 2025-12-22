@@ -356,6 +356,10 @@
         volumeEnabled: false,  // 거래량은 전략식에 없음
         volumeMultiple: 1.5,
         maAlignment: true,  // D+I: 이평선 정배열 (전략식 필수)
+        ichimokuEnabled: true,  // N: 일목균형표 구름대 위 (전략식 필수) ✅ 기본 체크
+        ichimokuTenkan: 9,
+        ichimokuKijun: 26,
+        ichimokuSenkou: 52,
         bbEnabled: true,  // K+L+M: 볼린저밴드 (전략식 필수)
         bbPeriod: 40,  // L+M: BB[40,2] (전략식 필수)
         bbMultiplier: 2,
@@ -1724,11 +1728,15 @@
               </label>
               <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
                 <input type="checkbox" id="ma20Enabled" ${app.conditions.ma20Enabled ? 'checked' : ''} class="w-4 h-4">
-                <span>J: 20일선 105% 이하</span>
+                <span>J: 20일선 105% 이하 ⭐ 전략식 필수</span>
               </label>
               <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
                 <input type="checkbox" id="highLowRangeEnabled" ${app.conditions.highLowRangeEnabled ? 'checked' : ''} class="w-4 h-4">
                 <span>G/H: 고가/저가 등락률 12~30% (30봉 이내) ⭐ 전략식 필수</span>
+              </label>
+              <label class="flex items-center gap-2 text-white cursor-pointer text-sm">
+                <input type="checkbox" id="ichimokuEnabled" ${app.conditions.ichimokuEnabled ? 'checked' : ''} class="w-4 h-4">
+                <span>N: 일목균형표 구름대 위 [9,26,52] ⭐ 전략식 필수</span>
               </label>
             </div>
           </div>
@@ -1874,7 +1882,7 @@
         });
       });
 
-      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'ma20Enabled', 'highLowRangeEnabled', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
+      ['excludeETF', 'excludeManagement', 'bbEnabled', 'volumeEnabled', 'bbUpperBreak', 'bbLowerBreak', 'maAlignment', 'ma20Enabled', 'highLowRangeEnabled', 'ichimokuEnabled', 'priceChangeEnabled', 'marketCapEnabled', 'perEnabled', 'pbrEnabled'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', (e) => {
           app.conditions[id] = e.target.checked;
