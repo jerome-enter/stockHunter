@@ -779,20 +779,34 @@
     // 줌 인
     function zoomIn() {
       if (priceChartInstance) {
-        priceChartInstance.zoom(1.2);
+        // 오른쪽 끝(최신 데이터)을 기준으로 확대
+        priceChartInstance.zoom({
+          x: 1.2,
+          focalPoint: { x: priceChartInstance.chartArea.right }
+        });
       }
       if (volumeChartInstance) {
-        volumeChartInstance.zoom(1.2);
+        volumeChartInstance.zoom({
+          x: 1.2,
+          focalPoint: { x: volumeChartInstance.chartArea.right }
+        });
       }
     }
     
     // 줌 아웃
     function zoomOut() {
       if (priceChartInstance) {
-        priceChartInstance.zoom(0.8);
+        // 오른쪽 끝(최신 데이터)을 기준으로 축소
+        priceChartInstance.zoom({
+          x: 0.8,
+          focalPoint: { x: priceChartInstance.chartArea.right }
+        });
       }
       if (volumeChartInstance) {
-        volumeChartInstance.zoom(0.8);
+        volumeChartInstance.zoom({
+          x: 0.8,
+          focalPoint: { x: volumeChartInstance.chartArea.right }
+        });
       }
     }
     
@@ -1025,14 +1039,7 @@
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: null, // 수정자 키 없이도 가능
-                onPanStart: function({chart, event}) {
-                  // 마우스 가운데 버튼(휠 클릭) 또는 Shift 키
-                  if (event.native.button === 1 || event.native.shiftKey) {
-                    return true;
-                  }
-                  return false;
-                }
+                modifierKey: 'shift' // Shift 키 눌러야 패닝 가능
               },
               zoom: {
                 wheel: {
@@ -1042,6 +1049,11 @@
                   enabled: false
                 },
                 mode: 'x'
+              },
+              limits: {
+                x: {
+                  minRange: 10 // 최소 10개 데이터 포인트 표시
+                }
               }
             }
           },
@@ -1114,14 +1126,7 @@
               pan: {
                 enabled: true,
                 mode: 'x',
-                modifierKey: null, // 수정자 키 없이도 가능
-                onPanStart: function({chart, event}) {
-                  // 마우스 가운데 버튼(휠 클릭) 또는 Shift 키
-                  if (event.native.button === 1 || event.native.shiftKey) {
-                    return true;
-                  }
-                  return false;
-                }
+                modifierKey: 'shift', // Shift 키 눌러야 패닝 가능
               },
               zoom: {
                 wheel: {
@@ -1133,7 +1138,9 @@
                 mode: 'x'
               },
               limits: {
-                x: {min: 'original', max: 'original'}
+                x: {
+                  minRange: 10 // 최소 10개 데이터 포인트 표시
+                }
               }
             }
           },
