@@ -877,32 +877,40 @@
       // 데이터 정렬 (오래된 것부터)
       const allSortedData = [...data].reverse();
       
-      // chartVisibleDays에 따라 최신 데이터만 선택 (오른쪽 끝 기준)
+      // 전체 데이터로 계산용 배열 생성 (이동평균, 일목균형표 계산에 필요)
+      const allLabels = allSortedData.map(d => d.date);
+      const allPrices = allSortedData.map(d => d.close);
+      const allHighs = allSortedData.map(d => d.high);
+      const allLows = allSortedData.map(d => d.low);
+      
+      // chartVisibleDays에 따라 표시할 구간 결정
       const startIndex = Math.max(0, allSortedData.length - chartVisibleDays);
       const sortedData = allSortedData.slice(startIndex);
-      chartSortedData = sortedData; // 전역 변수에 저장
+      chartSortedData = sortedData;
       
-      // 날짜와 가격 추출
+      // 표시용 배열 (필터링된 구간)
       const labels = sortedData.map(d => d.date);
       const prices = sortedData.map(d => d.close);
       const highs = sortedData.map(d => d.high);
       const lows = sortedData.map(d => d.low);
       const volumes = sortedData.map(d => d.volume);
       
-      // 일목균형표를 위한 미래 26일 추가
+      // 일목균형표를 위한 미래 26 영업일 추가
       const lastDate = new Date(labels[labels.length - 1]);
-      for (let i = 1; i <= 26; i++) {
-        const futureDate = new Date(lastDate);
-        futureDate.setDate(lastDate.getDate() + i);
+      let addedDays = 0;
+      let currentDate = new Date(lastDate);
+      
+      while (addedDays < 26) {
+        currentDate.setDate(currentDate.getDate() + 1);
         // 주말 건너뛰기
-        while (futureDate.getDay() === 0 || futureDate.getDay() === 6) {
-          futureDate.setDate(futureDate.getDate() + 1);
+        if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+          labels.push(currentDate.toISOString().split('T')[0]);
+          prices.push(null); // 미래 가격은 null
+          highs.push(null);
+          lows.push(null);
+          volumes.push(0); // 미래 거래량은 0
+          addedDays++;
         }
-        labels.push(futureDate.toISOString().split('T')[0]);
-        prices.push(null); // 미래 가격은 null
-        highs.push(null);
-        lows.push(null);
-        volumes.push(0); // 미래 거래량은 0
       }
       
       // 체크박스 상태
@@ -917,18 +925,26 @@
       const showLowerTrend = document.getElementById('showLowerTrend')?.checked || false;
       const showUpperTrend = document.getElementById('showUpperTrend')?.checked || false;
       
-      // 이동평균 계산
-      const ma60 = calculateMA(prices, 60);
-      const ma112 = calculateMA(prices, 112);
-      const ma224 = calculateMA(prices, 224);
+      // 이동평균 계산 (전체 데이터로 계산 후 필터링)
+      const ma60Full = calculateMA(allPrices, 60);
+      const ma112Full = calculateMA(allPrices, 112);
+      const ma224Full = calculateMA(allPrices, 224);
       
-      // 일목균형표 계산
-      const ichimoku = calculateIchimoku(highs, lows, prices);
+      const ma60 = ma60Full ? ma60Full.slice(startIndex) : null;
+      const ma112 = ma112Full ? ma112Full.slice(startIndex) : null;
+      const ma224 = ma224Full ? ma224Full.slice(startIndex) : null;
       
-      // 추세선 계산
+      // 일목균형표 계산 (전체 데이터로 계산 후 필터링)
+      const ichimokuFull = calculateIchimoku(allHighs, allLows, allPrices);
+      const ichimoku = {
+        senkou_span_a: ichimokuFull.senkou_span_a.slice(startIndex),
+        senkou_span_b: ichimokuFull.senkou_span_b.slice(startIndex)
+      };
+      
+      // 추세선 계산 (표시 구간만)
       const trendline = calculateTrendline(prices);
       
-      // 지지선/저항선 계산
+      // 지지선/저항선 계산 (표시 구간만)
       const support = calculateSupport(lows);
       const resistance = calculateResistance(highs);
       
@@ -1143,15 +1159,15 @@
       }
       
       // Y축 초기 범위 계산
-      const allLows = sortedData.map(d => d.low).filter(v => v != null && !isNaN(v));
-      const allHighs = sortedData.map(d => d.high).filter(v => v != null && !isNaN(v));
+      const visibleLows = sortedData.map(d => d.low).filter(v => v != null && !isNaN(v));
+      const visibleHighs = sortedData.map(d => d.high).filter(v => v != null && !isNaN(v));
       
       let initialYMin = 0;
       let initialYMax = 100;
       
-      if (allLows.length > 0 && allHighs.length > 0) {
-        const minLow = Math.min(...allLows);
-        const maxHigh = Math.max(...allHighs);
+      if (visibleLows.length > 0 && visibleHighs.length > 0) {
+        const minLow = Math.min(...visibleLows);
+        const maxHigh = Math.max(...visibleHighs);
         initialYMin = minLow * 0.95;
         initialYMax = maxHigh * 1.05;
       }
