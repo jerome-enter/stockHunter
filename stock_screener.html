@@ -118,6 +118,10 @@
               <input type="checkbox" id="showLowerTrend" class="w-4 h-4" onchange="toggleIndicator()">
               <span>추세 하단</span>
             </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showUpperTrend" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>추세 상단</span>
+            </label>
           </div>
           
           <!-- 줌 컨트롤 -->
@@ -906,6 +910,7 @@
       const showIchimoku = document.getElementById('showIchimoku').checked;
       const showCloseLine = document.getElementById('showCloseLine')?.checked || false;
       const showLowerTrend = document.getElementById('showLowerTrend')?.checked || false;
+      const showUpperTrend = document.getElementById('showUpperTrend')?.checked || false;
       
       // 이동평균 계산
       const ma60 = calculateMA(prices, 60);
@@ -922,8 +927,9 @@
       const support = calculateSupport(lows);
       const resistance = calculateResistance(highs);
       
-      // 추세 하단 변곡점 찾기
+      // 추세 하단/상단 변곡점 찾기
       const lowerTrendPoints = findLowerTrendInflectionPoints(sortedData);
+      const upperTrendPoints = findUpperTrendInflectionPoints(sortedData);
       
       // 캔들스틱 데이터 구성
       const candlestickData = [];
@@ -1101,6 +1107,27 @@
           type: 'scatter',
           data: scatterData,
           borderColor: 'rgb(34, 197, 94)',      // 녹색 테두리
+          backgroundColor: 'transparent',        // 속이 빈 원
+          borderWidth: 3,                        // 테두리 굵기
+          pointRadius: 8,                        // 원 크기 (눈에 잘 보이게)
+          pointHoverRadius: 10,                  // 마우스 오버 시 크기
+          yAxisID: 'y',
+          order: 1                               // 앞쪽에 표시
+        });
+      }
+      
+      // 추세 상단 변곡점 (노란색 원)
+      if (showUpperTrend && upperTrendPoints.length > 0) {
+        const scatterData = upperTrendPoints.map(point => ({
+          x: new Date(labels[point.index]).getTime(),
+          y: point.price
+        }));
+        
+        datasets.push({
+          label: '추세 상단',
+          type: 'scatter',
+          data: scatterData,
+          borderColor: 'rgb(251, 191, 36)',     // 노란색 테두리
           backgroundColor: 'transparent',        // 속이 빈 원
           borderWidth: 3,                        // 테두리 굵기
           pointRadius: 8,                        // 원 크기 (눈에 잘 보이게)
@@ -1404,6 +1431,48 @@
         for (let j = i - windowSize; j <= i + windowSize; j++) {
           if (j === i) continue;
           if (lowerPoints[j] <= currentPrice) {
+            isInflectionPoint = false;
+            break;
+          }
+        }
+        
+        // 변곡점이면 저장
+        if (isInflectionPoint) {
+          inflectionPoints.push({
+            index: i,
+            price: currentPrice
+          });
+        }
+      }
+      
+      return inflectionPoints;
+    }
+    
+    // 추세 상단 변곡점 찾기 (캔들 상단의 고점)
+    function findUpperTrendInflectionPoints(sortedData) {
+      if (!sortedData || sortedData.length < 5) return [];
+      
+      const upperPoints = []; // 각 캔들의 상단 가격
+      const inflectionPoints = []; // 변곡점 (고점) 인덱스
+      
+      // 1. 각 캔들의 상단 가격 계산 (양봉: 시가, 음봉: 종가)
+      for (let i = 0; i < sortedData.length; i++) {
+        const candle = sortedData[i];
+        const upperPrice = candle.close >= candle.open ? candle.open : candle.close;
+        upperPoints.push(upperPrice);
+      }
+      
+      // 2. 변곡점 찾기: 좌우보다 높은 지점 (윈도우 크기 5)
+      const windowSize = 5; // 좌우 5개씩 확인
+      
+      for (let i = windowSize; i < upperPoints.length - windowSize; i++) {
+        const currentPrice = upperPoints[i];
+        let isInflectionPoint = true;
+        
+        // 좌우 windowSize 범위 내에서 현재 포인트가 가장 높은지 확인
+        for (let j = i - windowSize; j <= i + windowSize; j++) {
+          if (j === i) continue;
+          if (upperPoints[j] >= currentPrice) {
             isInflectionPoint = false;
             break;
           }
