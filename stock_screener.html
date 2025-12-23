@@ -959,6 +959,9 @@
       const lowerTrendPoints = findLowerTrendInflectionPoints(sortedData);
       const upperTrendPoints = findUpperTrendInflectionPoints(sortedData);
       
+      // 3단계: 파동 패턴 강제 (상단-하단 교대)
+      const { lower: filteredLower, upper: filteredUpper } = enforceWavePattern(lowerTrendPoints, upperTrendPoints);
+      
       // 캔들스틱 데이터 구성 (인덱스 기반으로 공백 제거)
       const candlestickData = [];
       for (let i = 0; i < sortedData.length; i++) {
@@ -1136,10 +1139,10 @@
         });
       }
       
-      // 추세 하단 변곡점 (녹색 원)
-      if (showLowerTrend && lowerTrendPoints.length > 0) {
+      // 추세 하단 변곡점 (녹색 원) - 파동 패턴 적용
+      if (showLowerTrend && filteredLower.length > 0) {
         // sortedData의 실제 날짜를 사용 (labels 배열에서 가져오기)
-        const scatterData = lowerTrendPoints.map(point => ({
+        const scatterData = filteredLower.map(point => ({
           x: sortedData[point.index].date, // 실제 날짜 사용
           y: point.price
         }));
@@ -1158,10 +1161,10 @@
         });
       }
       
-      // 추세 상단 변곡점 (노란색 원)
-      if (showUpperTrend && upperTrendPoints.length > 0) {
+      // 추세 상단 변곡점 (노란색 원) - 파동 패턴 적용
+      if (showUpperTrend && filteredUpper.length > 0) {
         // sortedData의 실제 날짜를 사용 (labels 배열에서 가져오기)
-        const scatterData = upperTrendPoints.map(point => ({
+        const scatterData = filteredUpper.map(point => ({
           x: sortedData[point.index].date, // 실제 날짜 사용
           y: point.price
         }));
@@ -1443,12 +1446,59 @@
       };
     }
     
-    // 추세 하단 변곡점 찾기 (5일선 변곡점 기반)
-    // 5일선의 방향이 바뀌는 지점에서 최근 5일 중 최저 캔들 몸통 찾기
+    // 파동 패턴 강제: 상단-하단이 교대로 나타나도록
+    function enforceWavePattern(lowerPoints, upperPoints) {
+      // 모든 변곡점을 인덱스 기준으로 합치고 정렬
+      const allPoints = [];
+      
+      lowerPoints.forEach(p => allPoints.push({ ...p, type: 'lower' }));
+      upperPoints.forEach(p => allPoints.push({ ...p, type: 'upper' }));
+      
+      // 인덱스 순으로 정렬
+      allPoints.sort((a, b) => a.index - b.index);
+      
+      // 교대 패턴 강제
+      const filteredPoints = [];
+      let lastType = null;
+      
+      for (const point of allPoints) {
+        // 같은 타입이 연속되면 더 극값인 것만 선택
+        if (lastType === point.type && filteredPoints.length > 0) {
+          const prevPoint = filteredPoints[filteredPoints.length - 1];
+          
+          // 하단: 더 낮은 것 선택
+          if (point.type === 'lower') {
+            if (point.price < prevPoint.price) {
+              filteredPoints[filteredPoints.length - 1] = point; // 교체
+            }
+            // 아니면 현재 포인트 무시
+          }
+          // 상단: 더 높은 것 선택
+          else if (point.type === 'upper') {
+            if (point.price > prevPoint.price) {
+              filteredPoints[filteredPoints.length - 1] = point; // 교체
+            }
+            // 아니면 현재 포인트 무시
+          }
+        } else {
+          // 타입이 다르면 추가
+          filteredPoints.push(point);
+          lastType = point.type;
+        }
+      }
+      
+      // 타입별로 분리
+      const lower = filteredPoints.filter(p => p.type === 'lower');
+      const upper = filteredPoints.filter(p => p.type === 'upper');
+      
+      return { lower, upper };
+    }
+    
+    // 추세 하단 변곡점 찾기 (5일선 기반)
     function findLowerTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 7) return [];
       
-      // 1. 5일선 계산
+      // 5일선 계산
       const closePrices = sortedData.map(d => d.close);
       const ma5 = [];
       for (let i = 0; i < closePrices.length; i++) {
@@ -1460,18 +1510,17 @@
         }
       }
       
-      // 2. 5일선의 변곡점 찾기 (상승→하락 전환점)
+      // 5일선의 변곡점 찾기 (골짜기)
       const ma5InflectionPoints = [];
       for (let i = 5; i < ma5.length - 1; i++) {
         if (ma5[i] === null || ma5[i-1] === null || ma5[i+1] === null) continue;
         
-        // 5일선이 하락 중이다가 상승으로 전환 (골짜기)
         if (ma5[i-1] > ma5[i] && ma5[i] < ma5[i+1]) {
           ma5InflectionPoints.push(i);
         }
       }
       
-      // 3. 각 5일선 변곡점에서 최근 5일 구간의 최저 캔들 몸통 찾기
+      // 각 변곡점에서 최저 캔들 찾기
       const inflectionPoints = [];
       for (const inflectionIdx of ma5InflectionPoints) {
         const start = Math.max(0, inflectionIdx - 5);
@@ -1497,12 +1546,11 @@
       return inflectionPoints;
     }
     
-    // 추세 상단 변곡점 찾기 (5일선 변곡점 기반)
-    // 5일선의 방향이 바뀌는 지점에서 최근 5일 중 최고 캔들 몸통 찾기
+    // 추세 상단 변곡점 찾기 (5일선 기반)
     function findUpperTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 7) return [];
       
-      // 1. 5일선 계산
+      // 5일선 계산
       const closePrices = sortedData.map(d => d.close);
       const ma5 = [];
       for (let i = 0; i < closePrices.length; i++) {
@@ -1514,18 +1562,17 @@
         }
       }
       
-      // 2. 5일선의 변곡점 찾기 (하락→상승 전환점)
+      // 5일선의 변곡점 찾기 (봉우리)
       const ma5InflectionPoints = [];
       for (let i = 5; i < ma5.length - 1; i++) {
         if (ma5[i] === null || ma5[i-1] === null || ma5[i+1] === null) continue;
         
-        // 5일선이 상승 중이다가 하락으로 전환 (봉우리)
         if (ma5[i-1] < ma5[i] && ma5[i] > ma5[i+1]) {
           ma5InflectionPoints.push(i);
         }
       }
       
-      // 3. 각 5일선 변곡점에서 최근 5일 구간의 최고 캔들 몸통 찾기
+      // 각 변곡점에서 최고 캔들 찾기
       const inflectionPoints = [];
       for (const inflectionIdx of ma5InflectionPoints) {
         const start = Math.max(0, inflectionIdx - 5);
