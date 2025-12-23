@@ -64,8 +64,8 @@ class PriceDataCollector(
                 
                 logger.info { "[${ index + 1}/${stockCodes.size}] Processing $stockCode..." }
                 
-                // 300일 데이터 수집 (3회 API 호출)
-                val priceData = fetch300DaysData(stockCode)
+                // 400일 데이터 수집 (4회 API 호출)
+                val priceData = fetch400DaysData(stockCode)
                 
                 if (priceData.isEmpty()) {
                     logger.warn { "[$stockCode] No data returned from API, skipping..." }
@@ -103,9 +103,9 @@ class PriceDataCollector(
         logger.info { "Failed: $failureCount" }
         logger.info { "Total time: ${totalTime}s (${totalTime / 60}m ${totalTime % 60}s)" }
         
-        // 오래된 데이터 자동 정리 (280일 이전)
-        logger.info { "🧹 Cleaning old data (keeping 280 days)..." }
-        database.cleanOldData(keepDays = 280)
+        // 오래된 데이터 자동 정리 (400일 이전)
+        logger.info { "🧹 Cleaning old data (keeping 400 days)..." }
+        database.cleanOldData(keepDays = 400)
         
         // 진행 상태 완료
         InitializationProgress.complete()
@@ -125,14 +125,14 @@ class PriceDataCollector(
      * - 4차: 이전 100일
      * → 총 280일 확보! (ma224 계산 가능)
      */
-    private suspend fun fetch300DaysData(stockCode: String): List<DailyPrice> {
+    private suspend fun fetch400DaysData(stockCode: String): List<DailyPrice> {
         val allData = mutableListOf<DailyPrice>()
         val seenDates = mutableSetOf<LocalDate>() // 중복 방지
         
         val today = LocalDate.now()
         
-        // 4번 호출해서 280일 데이터 수집
-        for (batch in 0 until 4) {
+        // 6번 호출해서 400일 영업일 데이터 수집 (달력일 기준 600일, 주말/공휴일 제외하면 약 400영업일)
+        for (batch in 0 until 6) {
             try {
                 // ⚠️ Rate Limiter 대기 (67ms)
                 rateLimiter.acquire()
@@ -144,7 +144,7 @@ class PriceDataCollector(
                 val startDateStr = startDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
                 val endDateStr = endDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
                 
-                logger.debug { "[$stockCode] Batch ${batch + 1}/4: Requesting $startDateStr ~ $endDateStr (${startDate} ~ ${endDate})" }
+                logger.debug { "[$stockCode] Batch ${batch + 1}/6: Requesting $startDateStr ~ $endDateStr (${startDate} ~ ${endDate})" }
                 
                 // 기간별 API 호출
                 val response = kisApiClient.getDailyPriceByPeriod(
@@ -154,7 +154,7 @@ class PriceDataCollector(
                 )
                 
                 val actualData = response.getData()
-                logger.debug { "[$stockCode] Batch ${batch + 1}/4: API returned ${actualData.size} records" }
+                logger.debug { "[$stockCode] Batch ${batch + 1}/6: API returned ${actualData.size} records" }
                 
                 // 응답 데이터를 DailyPrice로 변환
                 actualData.forEach { priceData ->
@@ -302,9 +302,8 @@ class PriceDataCollector(
         logger.info { "Failed: $failureCount" }
         logger.info { "Total time: ${totalTime}s" }
         
-        // 오래된 데이터 자동 정리 (280일 이전)
-        logger.info { "🧹 Cleaning old data (keeping 280 days)..." }
-        database.cleanOldData(keepDays = 280)
+        // 일일 업데이트에서는 오래된 데이터 삭제하지 않음 (기존 데이터 유지)
+        // 초기화 시에만 cleanOldData 실행
         
         // 진행 상태 완료
         InitializationProgress.complete()

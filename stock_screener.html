@@ -1143,10 +1143,18 @@
       }
       
       // Y축 초기 범위 계산
-      const allLows = sortedData.map(d => d.low).filter(v => v != null);
-      const allHighs = sortedData.map(d => d.high).filter(v => v != null);
-      const initialYMin = Math.min(...allLows) * 0.95;
-      const initialYMax = Math.max(...allHighs) * 1.05;
+      const allLows = sortedData.map(d => d.low).filter(v => v != null && !isNaN(v));
+      const allHighs = sortedData.map(d => d.high).filter(v => v != null && !isNaN(v));
+      
+      let initialYMin = 0;
+      let initialYMax = 100;
+      
+      if (allLows.length > 0 && allHighs.length > 0) {
+        const minLow = Math.min(...allLows);
+        const maxHigh = Math.max(...allHighs);
+        initialYMin = minLow * 0.95;
+        initialYMax = maxHigh * 1.05;
+      }
       
       // 가격 차트 생성
       priceChartInstance = new Chart(priceCtx, {

@@ -1,6 +1,7 @@
 package com.jeromeent.stockhunter
 
 import com.jeromeent.stockhunter.client.KISApiClient
+import com.jeromeent.stockhunter.db.InitializationProgress
 import com.jeromeent.stockhunter.model.ScreeningCondition
 import com.jeromeent.stockhunter.service.StockScreener
 import com.jeromeent.stockhunter.us.client.KISUSApiClient
@@ -744,6 +745,9 @@ fun Route.databaseRoutes() {
                     val codes = db.getAllStockCodes()
                     var success = 0
                     
+                    // 진행 상태 시작
+                    InitializationProgress.start(codes.size)
+                    
                     codes.forEachIndexed { idx, code ->
                         try {
                             Thread.sleep(70) // Rate limit (초당 14건)
@@ -762,14 +766,22 @@ fun Route.databaseRoutes() {
                                     stmt.executeUpdate()
                                 }
                                 success++
+                                
+                                // 진행률 업데이트
+                                InitializationProgress.update(idx + 1, code)
+                                
                                 if (success % 100 == 0) {
                                     logger.info { "🔄 Progress: $success/${codes.size} (${(success * 100.0 / codes.size).toInt()}%)" }
                                 }
                             }
                         } catch (e: Exception) {
                             logger.warn { "[$code] ${e.message}" }
+                            InitializationProgress.update(idx + 1, code)
                         }
                     }
+                    
+                    // 진행 상태 완료
+                    InitializationProgress.complete()
                     
                     db.close()
                     client.close()
