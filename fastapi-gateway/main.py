@@ -120,11 +120,23 @@ async def root():
     
     for html_path in html_paths:
         if html_path.exists():
-            with open(html_path, "r", encoding="utf-8") as f:
-                html_content = f.read()
-            
-            logger.info(f"Serving HTML from: {html_path}")
-            return HTMLResponse(content=html_content)
+            try:
+                with open(html_path, "r", encoding="utf-8", errors="replace") as f:
+                    html_content = f.read()
+                
+                logger.info(f"Serving HTML from: {html_path}")
+                return HTMLResponse(content=html_content)
+            except Exception as e:
+                logger.error(f"Failed to read HTML file: {e}")
+                # Try with latin-1 encoding as fallback
+                try:
+                    with open(html_path, "r", encoding="latin-1") as f:
+                        html_content = f.read()
+                    logger.info(f"Serving HTML from: {html_path} (using latin-1 encoding)")
+                    return HTMLResponse(content=html_content)
+                except Exception as e2:
+                    logger.error(f"Failed with fallback encoding: {e2}")
+                    continue
     
     return HTMLResponse(
         content="""

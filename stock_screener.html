@@ -1423,24 +1423,25 @@
       };
     }
     
-    // 추세 하단 변곡점 찾기 (저점의 변곡점)
+    // 추세 하단 변곡점 찾기 (캔들 몸통 하단의 변곡점)
     function findLowerTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 5) return [];
       
-      const lows = sortedData.map(d => d.low); // 각 캔들의 저점
+      // 각 캔들의 몸통 하단 (시가, 종가 중 낮은 값)
+      const lowerPrices = sortedData.map(d => Math.min(d.open, d.close));
       const inflectionPoints = []; // 변곡점 (저점) 인덱스
       
       // 변곡점 찾기: 좌우보다 낮은 지점 (윈도우 크기 5)
       const windowSize = 5; // 좌우 5개씩 확인
       
-      for (let i = windowSize; i < lows.length - windowSize; i++) {
-        const currentLow = lows[i];
+      for (let i = windowSize; i < lowerPrices.length - windowSize; i++) {
+        const currentPrice = lowerPrices[i];
         let isInflectionPoint = true;
         
         // 좌우 windowSize 범위 내에서 현재 포인트가 가장 낮은지 확인
         for (let j = i - windowSize; j <= i + windowSize; j++) {
           if (j === i) continue;
-          if (lows[j] <= currentLow) {
+          if (lowerPrices[j] <= currentPrice) {
             isInflectionPoint = false;
             break;
           }
@@ -1450,7 +1451,7 @@
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentLow
+            price: currentPrice
           });
         }
       }
@@ -1458,24 +1459,25 @@
       return inflectionPoints;
     }
     
-    // 추세 상단 변곡점 찾기 (고점의 변곡점)
+    // 추세 상단 변곡점 찾기 (캔들 몸통 상단의 변곡점)
     function findUpperTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 5) return [];
       
-      const highs = sortedData.map(d => d.high); // 각 캔들의 고점
+      // 각 캔들의 몸통 상단 (시가, 종가 중 높은 값)
+      const upperPrices = sortedData.map(d => Math.max(d.open, d.close));
       const inflectionPoints = []; // 변곡점 (고점) 인덱스
       
       // 변곡점 찾기: 좌우보다 높은 지점 (윈도우 크기 5)
       const windowSize = 5; // 좌우 5개씩 확인
       
-      for (let i = windowSize; i < highs.length - windowSize; i++) {
-        const currentHigh = highs[i];
+      for (let i = windowSize; i < upperPrices.length - windowSize; i++) {
+        const currentPrice = upperPrices[i];
         let isInflectionPoint = true;
         
         // 좌우 windowSize 범위 내에서 현재 포인트가 가장 높은지 확인
         for (let j = i - windowSize; j <= i + windowSize; j++) {
           if (j === i) continue;
-          if (highs[j] >= currentHigh) {
+          if (upperPrices[j] >= currentPrice) {
             isInflectionPoint = false;
             break;
           }
@@ -1485,7 +1487,7 @@
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentHigh
+            price: currentPrice
           });
         }
       }
