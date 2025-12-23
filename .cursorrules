@@ -10,10 +10,10 @@ StockHunter/
 │       │   ├── KISApiClient.kt     # 한국투자증권 API 클라이언트
 │       │   └── KISStockMasterParser.kt  # 종목파일 파서 (업로드 전용)
 │       ├── service/
-│       │   └── DBStockScreener.kt  # DB 기반 스크리너 (280일 데이터)
+│       │   └── DBStockScreener.kt  # DB 기반 스크리너 (400일 데이터)
 │       └── db/
-│           ├── PriceDatabase.kt    # SQLite DB (280일 자동정리)
-│           └── PriceDataCollector.kt  # 데이터 수집 (4회 API 호출)
+│           ├── PriceDatabase.kt    # SQLite DB (400일 자동정리)
+│           └── PriceDataCollector.kt  # 데이터 수집 (6회 API 호출)
 ├── fastapi-gateway/        # 게이트웨이 (FastAPI)
 └── stock_screener.html     # 프론트엔드 (단일 HTML)
 ```
@@ -22,12 +22,13 @@ StockHunter/
 
 ### 1. DB 중심 아키텍처
 - **모든 스크리닝은 DB에서**: API 30일 데이터 사용 금지
-- **280일 유지**: 자동 정리 (cleanOldData)
-- **최신순 조회**: `ORDER BY trade_date DESC LIMIT 280`
+- **400일 수집 후 계속 누적**: 일일 업데이트 시 데이터 삭제 안 함
+- **초기화 시에만 정리**: `cleanOldData(keepDays = 400)` 호출
+- **스크리닝 조회**: DB에서 필요한 만큼 조회 (기본 280일)
 
 ### 2. 데이터 수집
-- **4회 API 호출**: 100일 × 4 = 280일 (영업일)
-- **자동 정리**: 초기화/업데이트 완료 후 280일 이전 삭제
+- **6회 API 호출**: 100일 × 6 = 400일 (영업일)
+- **자동 정리**: 초기화 완료 시에만 400일 이전 삭제 (일일 업데이트 시 삭제 안 함)
 - **Rate Limiter**: 초당 15건 (67ms 간격)
 
 ### 3. 종목 마스터
@@ -44,35 +45,37 @@ StockHunter/
 - **비율 기준 정렬**: 선택한 MA 비율 높은 순
 
 ## 절대 금지
-1. ❌ API에서 30일 데이터로 ma60/112/224 계산
-2. ❌ 네이버/KRX 크롤링으로 종목 자동 수집
-3. ❌ 체크박스로 ma60/112/224 중복 선택
-4. ❌ **사용자 요청 없이 문서 자동 생성** (README, 가이드, 매뉴얼 등)
+1. ❌ API에서 30일 데이터로 ma60/112/224 계산 (DB에서만!)
+2. ❌ 네이버/KRX 크롤링으로 종목 자동 수집 (파일 업로드만!)
+3. ❌ 체크박스로 ma60/112/224 중복 선택 (라디오 버튼만!)
+4. ❌ 일일 업데이트 시 오래된 데이터 삭제 (계속 누적!)
+5. ❌ **사용자 요청 없이 문서 자동 생성** (README, 가이드, 매뉴얼 등)
    - 명시적 요청이 있을 때만 문서 작성
    - 코드 수정만 하고 문서는 생성하지 않음
 
 ## API 엔드포인트
-- POST `/api/v1/database/initialize` - DB 초기화 (2,500종목 × 4회 × 280일)
+- POST `/api/v1/database/initialize` - DB 초기화 (2,500종목 × 6회 × 400일)
 - POST `/api/v1/database/update` - 일일 업데이트 (누락 기간 자동 채움)
 - POST `/api/v1/database/upload-stock-master` - 종목파일 업로드 (KOSPI/KOSDAQ)
 - POST `/api/v1/database/sync-stock-names` - 종목명 자동 동기화 (한투 API, 4분 소요)
-- POST `/api/v1/screen` - 스크리닝 (DB 280일 데이터 사용)
+- POST `/api/v1/screen` - 스크리닝 (DB 400일 데이터 사용)
 
 ## 주요 흐름
 
 ### 초기 설정
 1. 한투 포털에서 종목정보파일 다운로드 (KOSPI, KOSDAQ)
 2. 웹에서 파일 업로드 → stock_master 테이블에 종목코드+종목명 저장
-3. DB 초기화 → 280일 가격 데이터 수집
+3. DB 초기화 → 400일 가격 데이터 수집 (6회 API 호출)
+4. 초기화 완료 시 400일 이전 데이터 자동 정리
 
 ### 스크리닝
 1. 웹에서 조건 설정 (ma60/112/224 중 하나만 라디오 선택)
-2. DBStockScreener가 DB에서 280일 데이터 조회
+2. DBStockScreener가 DB에서 필요한 데이터 조회 (기본 280일)
 3. ma60/112/224 계산 → 필터링 → 비율 높은 순 정렬
 
 ### 유지보수
-- 일일 업데이트: 누락 기간 자동 계산 후 채움
-- 자동 정리: 280일 이전 데이터 삭제
+- 일일 업데이트: 누락 기간 자동 계산 후 채움 (데이터 삭제 안 함, 계속 누적)
+- 재초기화: 필요 시 forceRebuild 옵션으로 전체 재구축 + 400일 정리
 - 종목 갱신: 파일 재업로드
 
 ## 웹 프론트엔드 규칙
