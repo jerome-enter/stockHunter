@@ -1118,8 +1118,9 @@
       
       // 추세 하단 변곡점 (녹색 원)
       if (showLowerTrend && lowerTrendPoints.length > 0) {
+        // sortedData의 실제 날짜를 사용 (labels 배열에서 가져오기)
         const scatterData = lowerTrendPoints.map(point => ({
-          x: point.index, // 인덱스 사용
+          x: sortedData[point.index].date, // 실제 날짜 사용
           y: point.price
         }));
         
@@ -1139,8 +1140,9 @@
       
       // 추세 상단 변곡점 (노란색 원)
       if (showUpperTrend && upperTrendPoints.length > 0) {
+        // sortedData의 실제 날짜를 사용 (labels 배열에서 가져오기)
         const scatterData = upperTrendPoints.map(point => ({
-          x: point.index, // 인덱스 사용
+          x: sortedData[point.index].date, // 실제 날짜 사용
           y: point.price
         }));
         
@@ -1233,7 +1235,8 @@
                 callback: function(value, index) {
                   // 5개마다 날짜 표시
                   if (index % 5 === 0) {
-                    return labels[index];
+                    // value가 이미 문자열일 수 있으므로 안전하게 처리
+                    return value;
                   }
                   return '';
                 }
@@ -1420,31 +1423,24 @@
       };
     }
     
-    // 추세 하단 변곡점 찾기 (캔들 하단의 저점)
+    // 추세 하단 변곡점 찾기 (저점의 변곡점)
     function findLowerTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 5) return [];
       
-      const lowerPoints = []; // 각 캔들의 하단 가격
+      const lows = sortedData.map(d => d.low); // 각 캔들의 저점
       const inflectionPoints = []; // 변곡점 (저점) 인덱스
       
-      // 1. 각 캔들의 하단 가격 계산 (양봉: 종가, 음봉: 시가)
-      for (let i = 0; i < sortedData.length; i++) {
-        const candle = sortedData[i];
-        const lowerPrice = candle.close >= candle.open ? candle.close : candle.open;
-        lowerPoints.push(lowerPrice);
-      }
-      
-      // 2. 변곡점 찾기: 좌우보다 낮은 지점 (윈도우 크기 5)
+      // 변곡점 찾기: 좌우보다 낮은 지점 (윈도우 크기 5)
       const windowSize = 5; // 좌우 5개씩 확인
       
-      for (let i = windowSize; i < lowerPoints.length - windowSize; i++) {
-        const currentPrice = lowerPoints[i];
+      for (let i = windowSize; i < lows.length - windowSize; i++) {
+        const currentLow = lows[i];
         let isInflectionPoint = true;
         
         // 좌우 windowSize 범위 내에서 현재 포인트가 가장 낮은지 확인
         for (let j = i - windowSize; j <= i + windowSize; j++) {
           if (j === i) continue;
-          if (lowerPoints[j] <= currentPrice) {
+          if (lows[j] <= currentLow) {
             isInflectionPoint = false;
             break;
           }
@@ -1454,7 +1450,7 @@
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentPrice
+            price: currentLow
           });
         }
       }
@@ -1462,31 +1458,24 @@
       return inflectionPoints;
     }
     
-    // 추세 상단 변곡점 찾기 (캔들 상단의 고점)
+    // 추세 상단 변곡점 찾기 (고점의 변곡점)
     function findUpperTrendInflectionPoints(sortedData) {
       if (!sortedData || sortedData.length < 5) return [];
       
-      const upperPoints = []; // 각 캔들의 상단 가격
+      const highs = sortedData.map(d => d.high); // 각 캔들의 고점
       const inflectionPoints = []; // 변곡점 (고점) 인덱스
       
-      // 1. 각 캔들의 상단 가격 계산 (양봉: 시가, 음봉: 종가)
-      for (let i = 0; i < sortedData.length; i++) {
-        const candle = sortedData[i];
-        const upperPrice = candle.close >= candle.open ? candle.open : candle.close;
-        upperPoints.push(upperPrice);
-      }
-      
-      // 2. 변곡점 찾기: 좌우보다 높은 지점 (윈도우 크기 5)
+      // 변곡점 찾기: 좌우보다 높은 지점 (윈도우 크기 5)
       const windowSize = 5; // 좌우 5개씩 확인
       
-      for (let i = windowSize; i < upperPoints.length - windowSize; i++) {
-        const currentPrice = upperPoints[i];
+      for (let i = windowSize; i < highs.length - windowSize; i++) {
+        const currentHigh = highs[i];
         let isInflectionPoint = true;
         
         // 좌우 windowSize 범위 내에서 현재 포인트가 가장 높은지 확인
         for (let j = i - windowSize; j <= i + windowSize; j++) {
           if (j === i) continue;
-          if (upperPoints[j] >= currentPrice) {
+          if (highs[j] >= currentHigh) {
             isInflectionPoint = false;
             break;
           }
@@ -1496,7 +1485,7 @@
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentPrice
+            price: currentHigh
           });
         }
       }
