@@ -860,66 +860,7 @@
       if (e.key === 'Shift') isShiftPressed = false;
     });
     
-    // Y축 범위를 현재 보이는 데이터에 맞게 조정
-    function updateYAxisRange(chart) {
-      try {
-        if (!chartSortedData || chartSortedData.length === 0) {
-          console.log('No chartSortedData available');
-          return;
-        }
-        
-        const xScale = chart.scales.x;
-        const xMin = xScale.min;
-        const xMax = xScale.max;
-        
-        console.log('X range:', new Date(xMin), 'to', new Date(xMax));
-        
-        // 현재 보이는 범위의 데이터만 필터링
-        const visibleData = [];
-        for (let i = 0; i < chartSortedData.length; i++) {
-          const timestamp = new Date(chart.data.labels[i]).getTime();
-          if (timestamp >= xMin && timestamp <= xMax) {
-            visibleData.push(chartSortedData[i]);
-          }
-        }
-        
-        console.log('Visible data count:', visibleData.length);
-        
-        if (visibleData.length === 0) return;
-        
-        // 보이는 데이터의 최고가/최저가 계산
-        const visibleHighs = visibleData.map(d => d.high).filter(v => v != null);
-        const visibleLows = visibleData.map(d => d.low).filter(v => v != null);
-        
-        if (visibleHighs.length === 0 || visibleLows.length === 0) return;
-        
-        const minPrice = Math.min(...visibleLows);
-        const maxPrice = Math.max(...visibleHighs);
-        
-        console.log('Price range:', minPrice, 'to', maxPrice);
-        
-        // 5% 여유 추가
-        const padding = (maxPrice - minPrice) * 0.05;
-        const newMin = minPrice - padding;
-        const newMax = maxPrice + padding;
-        
-        console.log('New Y axis range:', newMin, 'to', newMax);
-        
-        // Y축 범위 업데이트
-        chart.options.scales.y.min = newMin;
-        chart.options.scales.y.max = newMax;
-        chart.options.scales.y1.min = newMin;
-        chart.options.scales.y1.max = newMax;
-        
-        // 차트 업데이트
-        chart.update('none'); // 애니메이션 없이 즉시 업데이트
-        
-        console.log('Y axis updated');
-      } catch (error) {
-        console.error('Error updating Y axis range:', error);
-      }
-    }
-    
+
     // 차트 그리기 (가격 + 거래량)
     function drawCharts(data, stockName) {
       // 기존 차트 파괴
