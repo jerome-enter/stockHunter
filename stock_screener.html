@@ -83,6 +83,10 @@
         <div class="flex justify-between items-center mb-4">
           <div class="flex flex-wrap gap-3">
             <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
+              <input type="checkbox" id="showMA5" class="w-4 h-4" onchange="toggleIndicator()">
+              <span>5일선</span>
+            </label>
+            <label class="flex items-center gap-2 text-white text-sm cursor-pointer">
               <input type="checkbox" id="showMA60" checked class="w-4 h-4" onchange="toggleIndicator()">
               <span>60일선</span>
             </label>
@@ -914,6 +918,7 @@
       }
       
       // 체크박스 상태
+      const showMA5 = document.getElementById('showMA5').checked;
       const showMA60 = document.getElementById('showMA60').checked;
       const showMA112 = document.getElementById('showMA112').checked;
       const showMA224 = document.getElementById('showMA224').checked;
@@ -926,10 +931,12 @@
       const showUpperTrend = document.getElementById('showUpperTrend')?.checked || false;
       
       // 이동평균 계산 (전체 데이터로 계산 후 필터링)
+      const ma5Full = calculateMA(allPrices, 5);
       const ma60Full = calculateMA(allPrices, 60);
       const ma112Full = calculateMA(allPrices, 112);
       const ma224Full = calculateMA(allPrices, 224);
       
+      const ma5 = ma5Full ? ma5Full.slice(startIndex) : null;
       const ma60 = ma60Full ? ma60Full.slice(startIndex) : null;
       const ma112 = ma112Full ? ma112Full.slice(startIndex) : null;
       const ma224 = ma224Full ? ma224Full.slice(startIndex) : null;
@@ -1003,11 +1010,24 @@
       }
       
       // 이동평균선
+      if (showMA5) {
+        datasets.push({
+          label: '5일선',
+          data: ma5,
+          borderColor: 'rgb(34, 197, 94)',      // 초록색
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          yAxisID: 'y',
+          order: 1
+        });
+      }
+      
       if (showMA60) {
         datasets.push({
           label: '60일선',
           data: ma60,
-          borderColor: 'rgb(59, 130, 246)',
+          borderColor: 'rgb(59, 130, 246)',     // 파란색
           backgroundColor: 'transparent',
           borderWidth: 1.5,
           pointRadius: 0,
@@ -1020,7 +1040,7 @@
         datasets.push({
           label: '112일선',
           data: ma112,
-          borderColor: 'rgb(168, 85, 247)',
+          borderColor: 'rgb(168, 85, 247)',     // 보라색
           backgroundColor: 'transparent',
           borderWidth: 1.5,
           pointRadius: 0,
@@ -1033,7 +1053,7 @@
         datasets.push({
           label: '224일선',
           data: ma224,
-          borderColor: 'rgb(239, 68, 68)',
+          borderColor: 'rgb(239, 68, 68)',      // 빨간색
           backgroundColor: 'transparent',
           borderWidth: 1.5,
           pointRadius: 0,
@@ -1424,34 +1444,49 @@
     }
     
     // 추세 하단 변곡점 찾기 (캔들 몸통 하단의 변곡점)
+    // 방향 전환 + 로컬 미니마 모두 탐지
     function findLowerTrendInflectionPoints(sortedData) {
-      if (!sortedData || sortedData.length < 5) return [];
+      if (!sortedData || sortedData.length < 3) return [];
       
       // 각 캔들의 몸통 하단 (시가, 종가 중 낮은 값)
       const lowerPrices = sortedData.map(d => Math.min(d.open, d.close));
       const inflectionPoints = []; // 변곡점 (저점) 인덱스
+      const windowSize = 3; // 로컬 미니마 탐지 범위
       
-      // 변곡점 찾기: 좌우보다 낮은 지점 (윈도우 크기 5)
-      const windowSize = 5; // 좌우 5개씩 확인
-      
-      for (let i = windowSize; i < lowerPrices.length - windowSize; i++) {
-        const currentPrice = lowerPrices[i];
-        let isInflectionPoint = true;
+      for (let i = 1; i < lowerPrices.length - 1; i++) {
+        const curr = lowerPrices[i];
+        let isInflectionPoint = false;
         
-        // 좌우 windowSize 범위 내에서 현재 포인트가 가장 낮은지 확인
-        for (let j = i - windowSize; j <= i + windowSize; j++) {
-          if (j === i) continue;
-          if (lowerPrices[j] <= currentPrice) {
-            isInflectionPoint = false;
-            break;
+        // 1. 방향 전환 감지: V자 골짜기 (즉각적인 반등)
+        const prev = lowerPrices[i - 1];
+        const next = lowerPrices[i + 1];
+        
+        if (prev > curr && curr < next) {
+          isInflectionPoint = true;
+        }
+        
+        // 2. 로컬 미니마: 주변 범위 내에서 가장 낮은 값
+        if (!isInflectionPoint) {
+          const start = Math.max(0, i - windowSize);
+          const end = Math.min(lowerPrices.length - 1, i + windowSize);
+          let isLocalMin = true;
+          
+          for (let j = start; j <= end; j++) {
+            if (j !== i && lowerPrices[j] < curr) {
+              isLocalMin = false;
+              break;
+            }
+          }
+          
+          if (isLocalMin) {
+            isInflectionPoint = true;
           }
         }
         
-        // 변곡점이면 저장
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentPrice
+            price: curr
           });
         }
       }
@@ -1460,34 +1495,49 @@
     }
     
     // 추세 상단 변곡점 찾기 (캔들 몸통 상단의 변곡점)
+    // 방향 전환 + 로컬 맥시마 모두 탐지
     function findUpperTrendInflectionPoints(sortedData) {
-      if (!sortedData || sortedData.length < 5) return [];
+      if (!sortedData || sortedData.length < 3) return [];
       
       // 각 캔들의 몸통 상단 (시가, 종가 중 높은 값)
       const upperPrices = sortedData.map(d => Math.max(d.open, d.close));
       const inflectionPoints = []; // 변곡점 (고점) 인덱스
+      const windowSize = 3; // 로컬 맥시마 탐지 범위
       
-      // 변곡점 찾기: 좌우보다 높은 지점 (윈도우 크기 5)
-      const windowSize = 5; // 좌우 5개씩 확인
-      
-      for (let i = windowSize; i < upperPrices.length - windowSize; i++) {
-        const currentPrice = upperPrices[i];
-        let isInflectionPoint = true;
+      for (let i = 1; i < upperPrices.length - 1; i++) {
+        const curr = upperPrices[i];
+        let isInflectionPoint = false;
         
-        // 좌우 windowSize 범위 내에서 현재 포인트가 가장 높은지 확인
-        for (let j = i - windowSize; j <= i + windowSize; j++) {
-          if (j === i) continue;
-          if (upperPrices[j] >= currentPrice) {
-            isInflectionPoint = false;
-            break;
+        // 1. 방향 전환 감지: 역V자 봉우리 (즉각적인 하락)
+        const prev = upperPrices[i - 1];
+        const next = upperPrices[i + 1];
+        
+        if (prev < curr && curr > next) {
+          isInflectionPoint = true;
+        }
+        
+        // 2. 로컬 맥시마: 주변 범위 내에서 가장 높은 값
+        if (!isInflectionPoint) {
+          const start = Math.max(0, i - windowSize);
+          const end = Math.min(upperPrices.length - 1, i + windowSize);
+          let isLocalMax = true;
+          
+          for (let j = start; j <= end; j++) {
+            if (j !== i && upperPrices[j] > curr) {
+              isLocalMax = false;
+              break;
+            }
+          }
+          
+          if (isLocalMax) {
+            isInflectionPoint = true;
           }
         }
         
-        // 변곡점이면 저장
         if (isInflectionPoint) {
           inflectionPoints.push({
             index: i,
-            price: currentPrice
+            price: curr
           });
         }
       }
