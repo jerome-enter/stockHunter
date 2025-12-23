@@ -700,6 +700,9 @@
     let volumeChartInstance = null;
     let chartData = null;
     let chartStockName = null;
+    let chartSortedData = null; // Y축 동적 조정을 위한 정렬된 데이터
+    let chartZoomLevel = 1.0; // 현재 줌 레벨 (1.0 = 전체 보기)
+    let chartVisibleDays = 280; // 현재 보이는 날짜 수
     
     // 차트 표시
     async function showChart(stockCode, stockName) {
@@ -720,6 +723,10 @@
         // 데이터 저장 (토글용)
         chartData = data;
         chartStockName = stockName;
+        
+        // 줌 레벨 초기화
+        chartVisibleDays = 280;
+        chartZoomLevel = 1.0;
         
         // 차트 그리기
         drawCharts(data, stockName);
@@ -794,46 +801,38 @@
     
     // 줌 인
     function zoomIn() {
-      if (priceChartInstance) {
-        // 오른쪽 끝(최신 데이터)을 기준으로 확대
-        priceChartInstance.zoom({
-          x: 1.2,
-          focalPoint: { x: priceChartInstance.chartArea.right }
-        });
-      }
-      if (volumeChartInstance) {
-        volumeChartInstance.zoom({
-          x: 1.2,
-          focalPoint: { x: volumeChartInstance.chartArea.right }
-        });
-      }
+      if (!chartData || !chartStockName) return;
+      
+      // 보이는 날짜 수를 줄임 (확대)
+      chartVisibleDays = Math.max(10, Math.floor(chartVisibleDays / 1.2));
+      chartZoomLevel *= 1.2;
+      
+      // 차트 다시 그리기
+      drawCharts(chartData, chartStockName);
     }
     
     // 줌 아웃
     function zoomOut() {
-      if (priceChartInstance) {
-        // 오른쪽 끝(최신 데이터)을 기준으로 축소
-        priceChartInstance.zoom({
-          x: 0.8,
-          focalPoint: { x: priceChartInstance.chartArea.right }
-        });
-      }
-      if (volumeChartInstance) {
-        volumeChartInstance.zoom({
-          x: 0.8,
-          focalPoint: { x: volumeChartInstance.chartArea.right }
-        });
-      }
+      if (!chartData || !chartStockName) return;
+      
+      // 보이는 날짜 수를 늘림 (축소)
+      chartVisibleDays = Math.min(280, Math.floor(chartVisibleDays * 1.2));
+      chartZoomLevel /= 1.2;
+      
+      // 차트 다시 그리기
+      drawCharts(chartData, chartStockName);
     }
     
     // 줌 초기화
     function resetZoom() {
-      if (priceChartInstance) {
-        priceChartInstance.resetZoom();
-      }
-      if (volumeChartInstance) {
-        volumeChartInstance.resetZoom();
-      }
+      if (!chartData || !chartStockName) return;
+      
+      // 전체 보기로 리셋
+      chartVisibleDays = 280;
+      chartZoomLevel = 1.0;
+      
+      // 차트 다시 그리기
+      drawCharts(chartData, chartStockName);
     }
     
     // 차트 닫기
@@ -861,6 +860,66 @@
       if (e.key === 'Shift') isShiftPressed = false;
     });
     
+    // Y축 범위를 현재 보이는 데이터에 맞게 조정
+    function updateYAxisRange(chart) {
+      try {
+        if (!chartSortedData || chartSortedData.length === 0) {
+          console.log('No chartSortedData available');
+          return;
+        }
+        
+        const xScale = chart.scales.x;
+        const xMin = xScale.min;
+        const xMax = xScale.max;
+        
+        console.log('X range:', new Date(xMin), 'to', new Date(xMax));
+        
+        // 현재 보이는 범위의 데이터만 필터링
+        const visibleData = [];
+        for (let i = 0; i < chartSortedData.length; i++) {
+          const timestamp = new Date(chart.data.labels[i]).getTime();
+          if (timestamp >= xMin && timestamp <= xMax) {
+            visibleData.push(chartSortedData[i]);
+          }
+        }
+        
+        console.log('Visible data count:', visibleData.length);
+        
+        if (visibleData.length === 0) return;
+        
+        // 보이는 데이터의 최고가/최저가 계산
+        const visibleHighs = visibleData.map(d => d.high).filter(v => v != null);
+        const visibleLows = visibleData.map(d => d.low).filter(v => v != null);
+        
+        if (visibleHighs.length === 0 || visibleLows.length === 0) return;
+        
+        const minPrice = Math.min(...visibleLows);
+        const maxPrice = Math.max(...visibleHighs);
+        
+        console.log('Price range:', minPrice, 'to', maxPrice);
+        
+        // 5% 여유 추가
+        const padding = (maxPrice - minPrice) * 0.05;
+        const newMin = minPrice - padding;
+        const newMax = maxPrice + padding;
+        
+        console.log('New Y axis range:', newMin, 'to', newMax);
+        
+        // Y축 범위 업데이트
+        chart.options.scales.y.min = newMin;
+        chart.options.scales.y.max = newMax;
+        chart.options.scales.y1.min = newMin;
+        chart.options.scales.y1.max = newMax;
+        
+        // 차트 업데이트
+        chart.update('none'); // 애니메이션 없이 즉시 업데이트
+        
+        console.log('Y axis updated');
+      } catch (error) {
+        console.error('Error updating Y axis range:', error);
+      }
+    }
+    
     // 차트 그리기 (가격 + 거래량)
     function drawCharts(data, stockName) {
       // 기존 차트 파괴
@@ -875,7 +934,12 @@
       const volumeCtx = document.getElementById('volumeChart').getContext('2d');
       
       // 데이터 정렬 (오래된 것부터)
-      const sortedData = [...data].reverse();
+      const allSortedData = [...data].reverse();
+      
+      // chartVisibleDays에 따라 최신 데이터만 선택 (오른쪽 끝 기준)
+      const startIndex = Math.max(0, allSortedData.length - chartVisibleDays);
+      const sortedData = allSortedData.slice(startIndex);
+      chartSortedData = sortedData; // 전역 변수에 저장
       
       // 날짜와 가격 추출
       const labels = sortedData.map(d => d.date);
@@ -1137,6 +1201,12 @@
         });
       }
       
+      // Y축 초기 범위 계산
+      const allLows = sortedData.map(d => d.low).filter(v => v != null);
+      const allHighs = sortedData.map(d => d.high).filter(v => v != null);
+      const initialYMin = Math.min(...allLows) * 0.95;
+      const initialYMax = Math.max(...allHighs) * 1.05;
+      
       // 가격 차트 생성
       priceChartInstance = new Chart(priceCtx, {
         type: 'line', // 기본 타입 line (datasets에서 개별 타입 지정)
@@ -1204,16 +1274,8 @@
             y: {
               type: 'linear',
               position: 'left',
-              min: function(context) {
-                // 실제 데이터의 최소값 계산
-                const allLows = sortedData.map(d => d.low).filter(v => v != null);
-                return Math.min(...allLows) * 0.95; // 5% 여유
-              },
-              max: function(context) {
-                // 실제 데이터의 최대값 계산
-                const allHighs = sortedData.map(d => d.high).filter(v => v != null);
-                return Math.max(...allHighs) * 1.05; // 5% 여유
-              },
+              min: initialYMin,
+              max: initialYMax,
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.8)',
                 callback: function(value) {
@@ -1225,16 +1287,8 @@
             y1: {
               type: 'linear',
               position: 'right',
-              min: function(context) {
-                // 왼쪽 Y축과 동일한 범위 사용
-                const allLows = sortedData.map(d => d.low).filter(v => v != null);
-                return Math.min(...allLows) * 0.95;
-              },
-              max: function(context) {
-                // 왼쪽 Y축과 동일한 범위 사용
-                const allHighs = sortedData.map(d => d.high).filter(v => v != null);
-                return Math.max(...allHighs) * 1.05;
-              },
+              min: initialYMin,
+              max: initialYMax,
               ticks: { 
                 color: 'rgba(255, 255, 255, 0.6)',
                 callback: function(value) {
@@ -1284,10 +1338,7 @@
             },
             zoom: {
               pan: {
-                enabled: true,
-                mode: 'x',
-                modifierKey: 'shift',
-                scaleMode: 'x'
+                enabled: false  // 버튼으로만 제어
               },
               zoom: {
                 wheel: {
@@ -1295,12 +1346,6 @@
                 },
                 pinch: {
                   enabled: false
-                },
-                mode: 'x'
-              },
-              limits: {
-                x: {
-                  minRange: 10 // 최소 10개 데이터 포인트 표시
                 }
               }
             }
