@@ -1523,9 +1523,22 @@
       // 각 변곡점에서 최저 캔들 찾기
       const inflectionPoints = [];
       for (const inflectionIdx of ma5InflectionPoints) {
-        const start = Math.max(0, inflectionIdx - 5);
+        // 5일선이 상승 시작한 지점까지 거슬러 올라감
+        let start = inflectionIdx;
+        for (let i = inflectionIdx - 1; i >= 0; i--) {
+          if (ma5[i] === null) break;
+          
+          // 이전 지점이 현재보다 낮으면 계속 거슬러 올라감
+          if (ma5[i] > ma5[i + 1]) {
+            start = i;
+          } else {
+            break; // 상승 시작 지점 발견
+          }
+        }
+        
         const end = inflectionIdx;
         
+        // 하락 구간 전체에서 최저 캔들 찾기
         let minPrice = Infinity;
         let minIndex = inflectionIdx;
         
@@ -1575,9 +1588,22 @@
       // 각 변곡점에서 최고 캔들 찾기
       const inflectionPoints = [];
       for (const inflectionIdx of ma5InflectionPoints) {
-        const start = Math.max(0, inflectionIdx - 5);
+        // 5일선이 하락 시작한 지점까지 거슬러 올라감
+        let start = inflectionIdx;
+        for (let i = inflectionIdx - 1; i >= 0; i--) {
+          if (ma5[i] === null) break;
+          
+          // 이전 지점이 현재보다 높으면 계속 거슬러 올라감
+          if (ma5[i] < ma5[i + 1]) {
+            start = i;
+          } else {
+            break; // 하락 시작 지점 발견
+          }
+        }
+        
         const end = inflectionIdx;
         
+        // 상승 구간 전체에서 최고 캔들 찾기
         let maxPrice = -Infinity;
         let maxIndex = inflectionIdx;
         
