@@ -1443,103 +1443,109 @@
       };
     }
     
-    // 추세 하단 변곡점 찾기 (캔들 몸통 하단의 변곡점)
-    // 방향 전환 + 로컬 미니마 모두 탐지
+    // 추세 하단 변곡점 찾기 (5일선 변곡점 기반)
+    // 5일선의 방향이 바뀌는 지점에서 최근 5일 중 최저 캔들 몸통 찾기
     function findLowerTrendInflectionPoints(sortedData) {
-      if (!sortedData || sortedData.length < 3) return [];
+      if (!sortedData || sortedData.length < 7) return [];
       
-      // 각 캔들의 몸통 하단 (시가, 종가 중 낮은 값)
-      const lowerPrices = sortedData.map(d => Math.min(d.open, d.close));
-      const inflectionPoints = []; // 변곡점 (저점) 인덱스
-      const windowSize = 3; // 로컬 미니마 탐지 범위
+      // 1. 5일선 계산
+      const closePrices = sortedData.map(d => d.close);
+      const ma5 = [];
+      for (let i = 0; i < closePrices.length; i++) {
+        if (i < 4) {
+          ma5.push(null);
+        } else {
+          const sum = closePrices.slice(i - 4, i + 1).reduce((a, b) => a + b, 0);
+          ma5.push(sum / 5);
+        }
+      }
       
-      for (let i = 1; i < lowerPrices.length - 1; i++) {
-        const curr = lowerPrices[i];
-        let isInflectionPoint = false;
+      // 2. 5일선의 변곡점 찾기 (상승→하락 전환점)
+      const ma5InflectionPoints = [];
+      for (let i = 5; i < ma5.length - 1; i++) {
+        if (ma5[i] === null || ma5[i-1] === null || ma5[i+1] === null) continue;
         
-        // 1. 방향 전환 감지: V자 골짜기 (즉각적인 반등)
-        const prev = lowerPrices[i - 1];
-        const next = lowerPrices[i + 1];
-        
-        if (prev > curr && curr < next) {
-          isInflectionPoint = true;
+        // 5일선이 하락 중이다가 상승으로 전환 (골짜기)
+        if (ma5[i-1] > ma5[i] && ma5[i] < ma5[i+1]) {
+          ma5InflectionPoints.push(i);
         }
+      }
+      
+      // 3. 각 5일선 변곡점에서 최근 5일 구간의 최저 캔들 몸통 찾기
+      const inflectionPoints = [];
+      for (const inflectionIdx of ma5InflectionPoints) {
+        const start = Math.max(0, inflectionIdx - 5);
+        const end = inflectionIdx;
         
-        // 2. 로컬 미니마: 주변 범위 내에서 가장 낮은 값
-        if (!isInflectionPoint) {
-          const start = Math.max(0, i - windowSize);
-          const end = Math.min(lowerPrices.length - 1, i + windowSize);
-          let isLocalMin = true;
-          
-          for (let j = start; j <= end; j++) {
-            if (j !== i && lowerPrices[j] < curr) {
-              isLocalMin = false;
-              break;
-            }
-          }
-          
-          if (isLocalMin) {
-            isInflectionPoint = true;
+        let minPrice = Infinity;
+        let minIndex = inflectionIdx;
+        
+        for (let j = start; j <= end; j++) {
+          const lowerPrice = Math.min(sortedData[j].open, sortedData[j].close);
+          if (lowerPrice < minPrice) {
+            minPrice = lowerPrice;
+            minIndex = j;
           }
         }
         
-        if (isInflectionPoint) {
-          inflectionPoints.push({
-            index: i,
-            price: curr
-          });
-        }
+        inflectionPoints.push({
+          index: minIndex,
+          price: minPrice
+        });
       }
       
       return inflectionPoints;
     }
     
-    // 추세 상단 변곡점 찾기 (캔들 몸통 상단의 변곡점)
-    // 방향 전환 + 로컬 맥시마 모두 탐지
+    // 추세 상단 변곡점 찾기 (5일선 변곡점 기반)
+    // 5일선의 방향이 바뀌는 지점에서 최근 5일 중 최고 캔들 몸통 찾기
     function findUpperTrendInflectionPoints(sortedData) {
-      if (!sortedData || sortedData.length < 3) return [];
+      if (!sortedData || sortedData.length < 7) return [];
       
-      // 각 캔들의 몸통 상단 (시가, 종가 중 높은 값)
-      const upperPrices = sortedData.map(d => Math.max(d.open, d.close));
-      const inflectionPoints = []; // 변곡점 (고점) 인덱스
-      const windowSize = 3; // 로컬 맥시마 탐지 범위
+      // 1. 5일선 계산
+      const closePrices = sortedData.map(d => d.close);
+      const ma5 = [];
+      for (let i = 0; i < closePrices.length; i++) {
+        if (i < 4) {
+          ma5.push(null);
+        } else {
+          const sum = closePrices.slice(i - 4, i + 1).reduce((a, b) => a + b, 0);
+          ma5.push(sum / 5);
+        }
+      }
       
-      for (let i = 1; i < upperPrices.length - 1; i++) {
-        const curr = upperPrices[i];
-        let isInflectionPoint = false;
+      // 2. 5일선의 변곡점 찾기 (하락→상승 전환점)
+      const ma5InflectionPoints = [];
+      for (let i = 5; i < ma5.length - 1; i++) {
+        if (ma5[i] === null || ma5[i-1] === null || ma5[i+1] === null) continue;
         
-        // 1. 방향 전환 감지: 역V자 봉우리 (즉각적인 하락)
-        const prev = upperPrices[i - 1];
-        const next = upperPrices[i + 1];
-        
-        if (prev < curr && curr > next) {
-          isInflectionPoint = true;
+        // 5일선이 상승 중이다가 하락으로 전환 (봉우리)
+        if (ma5[i-1] < ma5[i] && ma5[i] > ma5[i+1]) {
+          ma5InflectionPoints.push(i);
         }
+      }
+      
+      // 3. 각 5일선 변곡점에서 최근 5일 구간의 최고 캔들 몸통 찾기
+      const inflectionPoints = [];
+      for (const inflectionIdx of ma5InflectionPoints) {
+        const start = Math.max(0, inflectionIdx - 5);
+        const end = inflectionIdx;
         
-        // 2. 로컬 맥시마: 주변 범위 내에서 가장 높은 값
-        if (!isInflectionPoint) {
-          const start = Math.max(0, i - windowSize);
-          const end = Math.min(upperPrices.length - 1, i + windowSize);
-          let isLocalMax = true;
-          
-          for (let j = start; j <= end; j++) {
-            if (j !== i && upperPrices[j] > curr) {
-              isLocalMax = false;
-              break;
-            }
-          }
-          
-          if (isLocalMax) {
-            isInflectionPoint = true;
+        let maxPrice = -Infinity;
+        let maxIndex = inflectionIdx;
+        
+        for (let j = start; j <= end; j++) {
+          const upperPrice = Math.max(sortedData[j].open, sortedData[j].close);
+          if (upperPrice > maxPrice) {
+            maxPrice = upperPrice;
+            maxIndex = j;
           }
         }
         
-        if (isInflectionPoint) {
-          inflectionPoints.push({
-            index: i,
-            price: curr
-          });
-        }
+        inflectionPoints.push({
+          index: maxIndex,
+          price: maxPrice
+        });
       }
       
       return inflectionPoints;
