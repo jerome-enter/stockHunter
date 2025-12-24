@@ -1753,7 +1753,10 @@
       // 각 세그먼트를 선으로 그리기
       const result = new Array(prices.length).fill(null);
       
-      segments.forEach(segment => {
+      // 자동 트레이딩용: 최근 2개 세그먼트만 사용 (너무 많은 선 방지)
+      const recentSegments = segments.slice(-2);
+      
+      recentSegments.forEach(segment => {
         if (segment.length < 2) return;
         
         // 세그먼트의 시작과 끝
