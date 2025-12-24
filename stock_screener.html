@@ -984,19 +984,17 @@
         senkou_span_b: ichimokuFull.senkou_span_b.slice(startIndex)
       };
       
-      // 추세선 계산 (표시 구간만)
-      const trendline = calculateTrendline(prices);
+      // 추세 하단/상단 변곡점 찾기 (항상 계산 - 추세선에서 사용)
+      const lowerTrendPoints = findLowerTrendInflectionPoints(sortedData);
+      const upperTrendPoints = findUpperTrendInflectionPoints(sortedData);
+      const { lower: filteredLower, upper: filteredUpper } = enforceWavePattern(lowerTrendPoints, upperTrendPoints);
+      
+      // 추세선 계산 (변곡점 기반 - 추세 하단 체크박스와 무관하게 항상 계산)
+      const trendline = showTrendline ? calculateTrendline(prices, filteredLower) : [];
       
       // 지지선/저항선 계산 (표시 구간만)
       const support = calculateSupport(lows);
       const resistance = calculateResistance(highs);
-      
-      // 추세 하단/상단 변곡점 찾기
-      const lowerTrendPoints = findLowerTrendInflectionPoints(sortedData);
-      const upperTrendPoints = findUpperTrendInflectionPoints(sortedData);
-      
-      // 3단계: 파동 패턴 강제 (상단-하단 교대)
-      const { lower: filteredLower, upper: filteredUpper } = enforceWavePattern(lowerTrendPoints, upperTrendPoints);
       
       // 캔들스틱 데이터 구성 (인덱스 기반으로 공백 제거)
       const candlestickData = [];
@@ -1694,31 +1692,64 @@
       return inflectionPoints;
     }
     
-    // 추세선 계산 (선형 회귀) - 실제 데이터 범위만
-    function calculateTrendline(prices) {
-      // 실제 가격 데이터 개수 (null 아닌 것만)
-      const realPrices = prices.filter(p => p !== null);
-      const realLength = realPrices.length;
-      
-      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-      
-      for (let i = 0; i < realLength; i++) {
-        sumX += i;
-        sumY += realPrices[i];
-        sumXY += i * realPrices[i];
-        sumXX += i * i;
+    // 추세선 계산 (변곡점 기반 트렌드 라인) - 추세 하단 변곡점 연결
+    function calculateTrendline(prices, inflectionPoints) {
+      // inflectionPoints가 없으면 빈 배열 반환
+      if (!inflectionPoints || inflectionPoints.length < 2) {
+        return prices.map(() => null);
       }
       
-      const slope = (realLength * sumXY - sumX * sumY) / (realLength * sumXX - sumX * sumX);
-      const intercept = (sumY - slope * sumX) / realLength;
+      // 변곡점들을 시간순으로 정렬 (이미 정렬되어 있지만 확실히)
+      const sortedPoints = [...inflectionPoints].sort((a, b) => a.index - b.index);
       
-      // 실제 데이터 범위만 계산하고, 미래는 null
-      return prices.map((p, i) => {
-        if (i < realLength) {
-          return slope * i + intercept;
+      // 트렌드 세그먼트 찾기: 연속된 상승/하락 구간
+      const segments = [];
+      let currentSegment = [sortedPoints[0]];
+      
+      for (let i = 1; i < sortedPoints.length; i++) {
+        const prev = sortedPoints[i - 1];
+        const curr = sortedPoints[i];
+        
+        // 이전 세그먼트의 추세 방향
+        const prevTrend = currentSegment.length >= 2 ? 
+          (currentSegment[currentSegment.length - 1].price > currentSegment[0].price ? 'up' : 'down') : null;
+        
+        // 현재 점의 추세 방향
+        const currTrend = curr.price > prev.price ? 'up' : 'down';
+        
+        // 추세가 바뀌면 새 세그먼트 시작
+        if (prevTrend && prevTrend !== currTrend && currentSegment.length >= 2) {
+          segments.push(currentSegment);
+          currentSegment = [curr];
+        } else {
+          currentSegment.push(curr);
         }
-        return null; // 미래 26일은 null
+      }
+      
+      // 마지막 세그먼트 추가
+      if (currentSegment.length >= 2) {
+        segments.push(currentSegment);
+      }
+      
+      // 각 세그먼트를 선으로 그리기
+      const result = new Array(prices.length).fill(null);
+      
+      segments.forEach(segment => {
+        if (segment.length < 2) return;
+        
+        // 세그먼트의 시작과 끝
+        const start = segment[0];
+        const end = segment[segment.length - 1];
+        
+        // 선형 보간으로 중간 값 채우기
+        const slope = (end.price - start.price) / (end.index - start.index);
+        
+        for (let i = start.index; i <= end.index; i++) {
+          result[i] = start.price + slope * (i - start.index);
+        }
       });
+      
+      return result;
     }
     
     // 지지선 계산 (최근 60일 최저가 기준) - 실제 데이터 범위만
