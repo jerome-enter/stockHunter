@@ -994,9 +994,9 @@
       const upperTrendPoints = findUpperTrendInflectionPoints(sortedData);
       const { lower: filteredLower, upper: filteredUpper } = enforceWavePattern(lowerTrendPoints, upperTrendPoints);
       
-      // 추세선 계산 (변곡점 기반)
-      const lowerTrendline = showLowerTrendline ? calculateTrendline(prices, filteredLower) : [];
-      const upperTrendline = showUpperTrendline ? calculateTrendline(prices, filteredUpper) : [];
+      // 추세선 계산 (변곡점 기반) - 여러 개의 독립적인 선 반환
+      const lowerTrendlines = showLowerTrendline ? calculateTrendlines(prices, filteredLower) : [];
+      const upperTrendlines = showUpperTrendline ? calculateTrendlines(prices, filteredUpper) : [];
       
       // 지지선/저항선 계산 (표시 구간만)
       const support = calculateSupport(lows);
@@ -1134,31 +1134,35 @@
         });
       }
       
-      // 추세 하단선 (녹색)
-      if (showLowerTrendline) {
-        datasets.push({
-          label: '추세 하단선',
-          data: lowerTrendline,
-          borderColor: 'rgb(34, 197, 94)', // 녹색
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          pointRadius: 0,
-          yAxisID: 'y',
-          order: 2
+      // 추세 하단선들 (녹색) - 각각 독립적인 선
+      if (showLowerTrendline && lowerTrendlines.length > 0) {
+        lowerTrendlines.forEach((trendline, index) => {
+          datasets.push({
+            label: index === 0 ? '추세 하단선' : '', // 첫 번째만 범례 표시
+            data: trendline,
+            borderColor: 'rgb(34, 197, 94)', // 녹색
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            yAxisID: 'y',
+            order: 2
+          });
         });
       }
       
-      // 추세 상단선 (노란색)
-      if (showUpperTrendline) {
-        datasets.push({
-          label: '추세 상단선',
-          data: upperTrendline,
-          borderColor: 'rgb(234, 179, 8)', // 노란색
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          pointRadius: 0,
-          yAxisID: 'y',
-          order: 2
+      // 추세 상단선들 (노란색) - 각각 독립적인 선
+      if (showUpperTrendline && upperTrendlines.length > 0) {
+        upperTrendlines.forEach((trendline, index) => {
+          datasets.push({
+            label: index === 0 ? '추세 상단선' : '', // 첫 번째만 범례 표시
+            data: trendline,
+            borderColor: 'rgb(234, 179, 8)', // 노란색
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            yAxisID: 'y',
+            order: 2
+          });
         });
       }
       
@@ -1712,7 +1716,8 @@
     }
     
     // 추세선 계산 (변곡점 기반 트렌드 라인) - 추세 하단 변곡점 연결
-    function calculateTrendline(prices, inflectionPoints) {
+    // 여러 개의 독립적인 추세선 반환
+    function calculateTrendlines(prices, inflectionPoints) {
       // inflectionPoints가 없으면 빈 배열 반환
       if (!inflectionPoints || inflectionPoints.length < 2) {
         return prices.map(() => null);
@@ -1738,8 +1743,10 @@
         
         // 추세가 바뀌면 새 세그먼트 시작
         if (prevTrend && prevTrend !== currTrend && currentSegment.length >= 2) {
+          const lastPoint = currentSegment[currentSegment.length - 1];
           segments.push(currentSegment);
-          currentSegment = [curr];
+          // 이전 세그먼트의 마지막 점을 새 세그먼트의 시작점으로 포함
+          currentSegment = [lastPoint, curr];
         } else {
           currentSegment.push(curr);
         }
@@ -1750,10 +1757,10 @@
         segments.push(currentSegment);
       }
       
-      // 각 세그먼트를 선으로 그리기
-      const result = new Array(prices.length).fill(null);
+      // 각 세그먼트를 독립적인 배열로 반환
+      const results = [];
       
-      // 자동 트레이딩용: 최근 2개 세그먼트만 사용 (너무 많은 선 방지)
+      // 자동 트레이딩용: 최근 2개 세그먼트만 사용
       const recentSegments = segments.slice(-2);
       
       recentSegments.forEach(segment => {
@@ -1763,15 +1770,29 @@
         const start = segment[0];
         const end = segment[segment.length - 1];
         
-        // 선형 보간으로 중간 값 채우기
+        // 기울기 계산
         const slope = (end.price - start.price) / (end.index - start.index);
         
-        for (let i = start.index; i <= end.index; i++) {
-          result[i] = start.price + slope * (i - start.index);
+        // 추세선 연장: 시작점 이전 20개, 끝점 이후 20개
+        const extendBefore = 20;
+        const extendAfter = 20;
+        
+        // 실제 그리기 범위 (차트 범위 내로 제한)
+        const drawStart = Math.max(0, start.index - extendBefore);
+        const drawEnd = Math.min(prices.length - 1, end.index + extendAfter);
+        
+        // 이 세그먼트만의 독립적인 배열 생성
+        const segmentLine = new Array(prices.length).fill(null);
+        
+        // 추세선 그리기 (연장 포함)
+        for (let i = drawStart; i <= drawEnd; i++) {
+          segmentLine[i] = start.price + slope * (i - start.index);
         }
+        
+        results.push(segmentLine);
       });
       
-      return result;
+      return results;
     }
     
     // 지지선 계산 (최근 60일 최저가 기준) - 실제 데이터 범위만
