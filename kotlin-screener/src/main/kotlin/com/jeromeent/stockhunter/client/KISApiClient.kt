@@ -449,7 +449,7 @@ class KISApiClient(
         val trId = if (isProduction) "FHKST01010100" else "FHKST01010100"
         
         try {
-            logger.debug { "Fetching current price with info for $stockCode" }
+            logger.info { "[$stockCode] Fetching current price with info, tr_id: $trId" }
             
             val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-price") {
                 headers {
@@ -457,19 +457,30 @@ class KISApiClient(
                     append("appkey", appKey)
                     append("appsecret", appSecret)
                     append("tr_id", trId)
+                    append("custtype", "P")  // 개인 고객 타입
                 }
                 parameter("fid_cond_mrkt_div_code", "J")
                 parameter("fid_input_iscd", stockCode)
             }
             
-            return response.body<KISCurrentPriceResponse>().also {
-                if (it.rt_cd != "0") {
-                    logger.warn { "API returned non-zero code for $stockCode: ${it.msg1}" }
-                }
+            val result = response.body<KISCurrentPriceResponse>()
+            
+            logger.info { "[$stockCode] API Response - rt_cd: ${result.rt_cd}, msg1: ${result.msg1}, msg_cd: ${result.msg_cd}" }
+            
+            if (result.rt_cd != "0") {
+                logger.error { "[$stockCode] API Error Details:" }
+                logger.error { "  - rt_cd: ${result.rt_cd}" }
+                logger.error { "  - msg1: ${result.msg1}" }
+                logger.error { "  - msg_cd: ${result.msg_cd}" }
+                logger.error { "  - output: ${result.output}" }
+            } else {
+                logger.info { "[$stockCode] Current price: ${result.output?.stck_prpr ?: "N/A"}" }
             }
             
+            return result
+            
         } catch (e: Exception) {
-            logger.error(e) { "Failed to fetch current price with info for $stockCode" }
+            logger.error(e) { "[$stockCode] Exception while fetching current price" }
             return null
         }
     }

@@ -287,6 +287,29 @@ fun Route.domesticScreeningRoutes() {
             }
         }
         
+        // GET /api/v1/stocks/:code/current - 현재가 조회
+        get("/stocks/{code}/current") {
+            try {
+                val stockCode = call.parameters["code"] ?: throw IllegalArgumentException("Stock code required")
+                val appKey = call.request.queryParameters["appKey"] ?: throw IllegalArgumentException("appKey required")
+                val appSecret = call.request.queryParameters["appSecret"] ?: throw IllegalArgumentException("appSecret required")
+                val isProduction = call.request.queryParameters["isProduction"]?.toBoolean() ?: false
+                
+                val kisClient = KISApiClient(appKey, appSecret, isProduction)
+                val currentPrice = kisClient.getCurrentPriceWithInfo(stockCode)
+                kisClient.close()
+                
+                if (currentPrice != null) {
+                    call.respond(HttpStatusCode.OK, currentPrice)
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Current price not found"))
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "현재가 조회 실패" }
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+        
         // GET /api/v1/stocks/:code/financial - 재무비율 조회 (P, R 조건)
         get("/stocks/{code}/financial") {
             try {

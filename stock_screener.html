@@ -161,8 +161,12 @@
       <!-- 통계 정보 -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
         <div class="bg-slate-800/50 rounded-lg p-3">
-          <div class="text-white/60 text-xs mb-1">현재가</div>
+          <div class="text-white/60 text-xs mb-1 flex items-center gap-1">
+            현재가 
+            <span id="chartPriceType" class="text-xs"></span>
+          </div>
           <div class="text-white font-bold text-lg" id="chartPrice">-</div>
+          <div id="chartPriceChange" class="text-xs mt-1">-</div>
         </div>
         <div class="bg-slate-800/50 rounded-lg p-3">
           <div class="text-white/60 text-xs mb-1">60일선</div>
@@ -735,8 +739,11 @@
         // 차트 그리기
         drawCharts(data, stockName);
         
-        // 통계 정보 업데이트
-        updateChartStats(data);
+        // 통계 정보 업데이트 (DB 데이터 기반)
+        updateChartStats(data, stockCode);
+        
+        // 현재가 가져오기 (실시간)
+        fetchCurrentPrice(stockCode);
         
         // 재무 정보 가져오기 (P, R 조건)
         fetchFinancialData(stockCode);
@@ -744,6 +751,30 @@
       } catch (err) {
         alert('❌ 차트 데이터를 불러올 수 없습니다: ' + err.message);
         closeChart();
+      }
+    }
+    
+    // 현재가 가져오기 (실시간)
+    async function fetchCurrentPrice(stockCode) {
+      try {
+        const response = await fetch(`http://localhost:8080/api/v1/stocks/${stockCode}/current?appKey=${app.appKey}&appSecret=${app.appSecret}&isProduction=${app.isProduction}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('현재가 API 응답:', data);
+          
+          if (data.output && data.output.stck_prpr) {
+            updateRealtimePrice(data.output);
+          } else {
+            fallbackToClosingPrice();
+          }
+        } else {
+          console.warn('현재가 조회 실패, 전일 종가 사용');
+          fallbackToClosingPrice();
+        }
+      } catch (err) {
+        console.error('현재가 조회 에러:', err);
+        fallbackToClosingPrice();
       }
     }
     
@@ -1694,15 +1725,26 @@
     }
     
     // 통계 정보 업데이트
-    function updateChartStats(data) {
+    function updateChartStats(data, stockCode) {
       if (data.length === 0) return;
       
-      const latest = data[0]; // 최신 데이터
+      const latest = data[0]; // DB 최신 데이터 (전일 종가)
+      const prevClose = latest.close; // 전일 종가
       const prices = data.map(d => d.close);
       
-      document.getElementById('chartPrice').textContent = 
-        latest.close.toLocaleString() + '원';
+      // 일단 전일 종가로 표시 (재무 API에서 실시간 가격 업데이트될 것)
+      window.chartPrevClose = prevClose; // 전역 변수에 저장
       
+      document.getElementById('chartPrice').textContent = 
+        prevClose.toLocaleString() + '원';
+      
+      document.getElementById('chartPriceChange').innerHTML = 
+        '<span class="text-white/60">로딩 중...</span>';
+      
+      document.getElementById('chartPriceType').innerHTML = 
+        '<span class="bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded text-xs">전일</span>';
+      
+      // 이동평균선 정보
       const ma60 = calculateMA(prices.reverse(), 60);
       const ma112 = calculateMA(prices, 112);
       const ma224 = calculateMA(prices, 224);
@@ -1715,6 +1757,57 @@
         ma112[latestIdx] ? Math.round(ma112[latestIdx]).toLocaleString() + '원' : 'N/A';
       document.getElementById('chartMa224').textContent = 
         ma224[latestIdx] ? Math.round(ma224[latestIdx]).toLocaleString() + '원' : 'N/A';
+    }
+    
+    // 실시간 가격 업데이트 (재무 API 응답에서 호출됨)
+    function updateRealtimePrice(data) {
+      const prevClose = window.chartPrevClose || 0;
+      
+      // 현재가 추출 (여러 필드명 지원)
+      const currentPrice = parseFloat(
+        data.stck_prpr ||        // 주식현재가
+        data.current_price ||
+        data.stck_clpr ||        // 주식종가
+        prevClose
+      );
+      
+      // 현재가가 없거나 전일종가와 같으면 fallback
+      if (!currentPrice || currentPrice === prevClose) {
+        fallbackToClosingPrice();
+        return;
+      }
+      
+      // 전일 대비 변동
+      const change = parseFloat(data.prdy_vrss || (currentPrice - prevClose));
+      const changePercent = ((change / prevClose) * 100).toFixed(2);
+      
+      // 현재가 표시
+      document.getElementById('chartPrice').textContent = 
+        currentPrice.toLocaleString() + '원';
+      
+      // 가격 변동 표시
+      const changeColor = change >= 0 ? 'text-red-400' : 'text-blue-400';
+      const changeSign = change >= 0 ? '+' : '';
+      document.getElementById('chartPriceChange').innerHTML = 
+        `<span class="${changeColor}">${changeSign}${change.toLocaleString()}원 (${changeSign}${changePercent}%)</span>`;
+      
+      // 실시간 표시
+      document.getElementById('chartPriceType').innerHTML = 
+        '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">실시간</span>';
+    }
+    
+    // 전일 종가로 fallback
+    function fallbackToClosingPrice() {
+      const prevClose = window.chartPrevClose || 0;
+      
+      document.getElementById('chartPrice').textContent = 
+        prevClose.toLocaleString() + '원';
+      
+      document.getElementById('chartPriceChange').innerHTML = 
+        '<span class="text-white/60">전일 종가 기준</span>';
+      
+      document.getElementById('chartPriceType').innerHTML = 
+        '<span class="bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded text-xs">전일</span>';
     }
     
     // 종목명 동기화
