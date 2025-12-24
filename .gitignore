@@ -46,3 +46,14 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Test files with hardcoded API keys (DO NOT COMMIT!)
+test_all_fields.sh
+test_kis_api.sh
+test_kis_api_advanced.sh
+test_kis_current.sh
+test_search_info.sh
+test_stock_name.sh
+test_stock_search.sh
+sync_stock_names.sh
+test_current_price.py
