@@ -97,8 +97,9 @@ object TokenCache {
             val cacheData = json.decodeFromString<CachedTokenData>(cacheFile.readText())
             val now = Instant.now().epochSecond
             
-            // 만료 5분 전까지 유효하다고 판단
-            if (now < cacheData.expiresAt - 300) {
+            // API 응답 기반 토큰 갱신을 사용하므로, 만료 시간까지 그냥 사용
+            // (API가 토큰 만료를 알려주면 그때 갱신)
+            if (now < cacheData.expiresAt) {
                 val issuedTime = Instant.ofEpochSecond(cacheData.issuedAt)
                 val expiresTime = Instant.ofEpochSecond(cacheData.expiresAt)
                 val remainingHours = (cacheData.expiresAt - now) / 3600.0
@@ -108,7 +109,7 @@ object TokenCache {
                 }
                 return cacheData.token
             } else {
-                logger.info { "Cached token expired or near expiration" }
+                logger.info { "Cached token expired" }
                 // 만료된 캐시 파일 삭제
                 cacheFile.delete()
                 return null

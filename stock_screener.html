@@ -757,11 +757,15 @@
     // 현재가 가져오기 (실시간)
     async function fetchCurrentPrice(stockCode) {
       try {
-        const response = await fetch(`http://localhost:8080/api/v1/stocks/${stockCode}/current?appKey=${app.appKey}&appSecret=${app.appSecret}&isProduction=${app.isProduction}`);
+        const url = `http://localhost:8080/api/v1/stocks/${stockCode}/current?appKey=${app.appKey}&appSecret=${app.appSecret}&isProduction=${app.isProduction}`;
+        console.log('🔗 현재가 API 호출:', url);
+        
+        const response = await fetch(url);
+        console.log('📡 응답 상태:', response.status, response.statusText);
         
         if (response.ok) {
           const data = await response.json();
-          console.log('현재가 API 응답:', data);
+          console.log('✅ 현재가 API 응답:', data);
           
           if (data.output && data.output.stck_prpr) {
             updateRealtimePrice(data.output);
@@ -769,11 +773,12 @@
             fallbackToClosingPrice();
           }
         } else {
-          console.warn('현재가 조회 실패, 전일 종가 사용');
+          const errorText = await response.text();
+          console.warn('❌ 현재가 조회 실패:', response.status, errorText);
           fallbackToClosingPrice();
         }
       } catch (err) {
-        console.error('현재가 조회 에러:', err);
+        console.error('💥 현재가 조회 에러:', err);
         fallbackToClosingPrice();
       }
     }
@@ -1254,6 +1259,40 @@
               enabled: function() {
                 // Shift 키를 누르고 있으면 tooltip 비활성화 (패닝 모드)
                 return !isShiftPressed;
+              },
+              callbacks: {
+                label: function(context) {
+                  // 캔들스틱 데이터셋의 기본 라벨 숨기기 (O: undefined 등)
+                  if (context.dataset.type === 'candlestick') {
+                    return null; // 기본 라벨 표시 안 함
+                  }
+                  // 다른 데이터셋(이동평균선 등)은 기본 표시
+                  return context.dataset.label + ': ' + context.formattedValue;
+                },
+                afterBody: function(context) {
+                  if (context.length === 0) return '';
+                  
+                  const dataIndex = context[0].dataIndex;
+                  const candleData = sortedData[dataIndex];
+                  
+                  if (!candleData) return '';
+                  
+                  // OHLC 정보 포맷팅
+                  const open = candleData.open?.toLocaleString() || 'N/A';
+                  const high = candleData.high?.toLocaleString() || 'N/A';
+                  const low = candleData.low?.toLocaleString() || 'N/A';
+                  const close = candleData.close?.toLocaleString() || 'N/A';
+                  const volume = candleData.volume?.toLocaleString() || 'N/A';
+                  
+                  return [
+                    '',
+                    `시가(O): ${open}원`,
+                    `고가(H): ${high}원`,
+                    `저가(L): ${low}원`,
+                    `종가(C): ${close}원`,
+                    `거래량: ${volume}`
+                  ];
+                }
               }
             },
             zoom: {

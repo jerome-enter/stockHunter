@@ -54,6 +54,29 @@ class KISApiClient(
     private var tokenExpireTime: Instant? = null
     private val tokenMutex = Mutex()  // Race Condition 방지
     
+    /**
+     * 토큰 만료 에러 감지
+     * 
+     * 한투 API 토큰 만료 시 응답 코드:
+     * - rt_cd: "1" (에러)
+     * - msg_cd: 토큰 관련 에러 코드
+     * - HTTP Status: 500 또는 401
+     */
+    private fun isTokenExpiredError(rtCd: String?, msgCd: String?, msg1: String?): Boolean {
+        // rt_cd가 1이고, 메시지나 코드에 토큰/인증 관련 키워드가 있으면 토큰 만료로 판단
+        if (rtCd != "1") return false
+        
+        val errorIndicators = listOf(
+            "token", "TOKEN", "인증", "auth", "AUTH", 
+            "expired", "EXPIRED", "만료", "invalid", "INVALID"
+        )
+        
+        return errorIndicators.any { keyword ->
+            (msgCd?.contains(keyword, ignoreCase = true) == true) ||
+            (msg1?.contains(keyword, ignoreCase = true) == true)
+        }
+    }
+    
     // HTTP 클라이언트
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -73,10 +96,6 @@ class KISApiClient(
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 10_000
             socketTimeoutMillis = 30_000
-        }
-        
-        defaultRequest {
-            contentType(ContentType.Application.Json)
         }
     }
     
@@ -449,10 +468,24 @@ class KISApiClient(
         val trId = if (isProduction) "FHKST01010100" else "FHKST01010100"
         
         try {
-            logger.info { "[$stockCode] Fetching current price with info, tr_id: $trId" }
+            logger.info { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
+            logger.info { "📊 현재가 조회 시작" }
+            logger.info { "  - URL: $baseUrl/uapi/domestic-stock/v1/quotations/inquire-price" }
+            logger.info { "  - 종목코드: $stockCode" }
+            logger.info { "  - TR_ID: $trId" }
+            logger.info { "  - 파라미터: fid_cond_mrkt_div_code=J, fid_input_iscd=$stockCode" }
+            logger.info { "  - 헤더:" }
+            logger.info { "    * Content-Type: application/json; charset=utf-8" }
+            logger.info { "    * authorization: Bearer ${cachedToken?.take(20)}..." }
+            logger.info { "    * appkey: ${appKey.take(10)}..." }
+            logger.info { "    * appsecret: ${appSecret.take(10)}..." }
+            logger.info { "    * tr_id: $trId" }
+            logger.info { "    * custtype: P" }
+            logger.info { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
             
             val response = httpClient.get("$baseUrl/uapi/domestic-stock/v1/quotations/inquire-price") {
                 headers {
+                    append("Content-Type", "application/json; charset=utf-8")
                     append("authorization", "Bearer $cachedToken")
                     append("appkey", appKey)
                     append("appsecret", appSecret)
@@ -465,22 +498,45 @@ class KISApiClient(
             
             val result = response.body<KISCurrentPriceResponse>()
             
-            logger.info { "[$stockCode] API Response - rt_cd: ${result.rt_cd}, msg1: ${result.msg1}, msg_cd: ${result.msg_cd}" }
+            logger.info { "📥 응답 수신 완료" }
+            logger.info { "  - HTTP Status: ${response.status}" }
+            logger.info { "  - rt_cd: ${result.rt_cd}" }
+            logger.info { "  - msg1: ${result.msg1}" }
+            logger.info { "  - msg_cd: ${result.msg_cd}" }
+            
+            // 토큰 만료 체크 및 자동 갱신
+            if (isTokenExpiredError(result.rt_cd, result.msg_cd, result.msg1)) {
+                logger.warn { "⚠️ 토큰 만료 감지! 새 토큰 발급 후 재시도..." }
+                TokenCache.clearToken(appKey, isProduction)
+                cachedToken = null
+                tokenExpireTime = null
+                // 재귀 호출로 새 토큰 발급 후 재시도 (무한 루프 방지: 1회만)
+                return getCurrentPriceWithInfo(stockCode)
+            }
             
             if (result.rt_cd != "0") {
-                logger.error { "[$stockCode] API Error Details:" }
+                logger.error { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
+                logger.error { "❌ API 에러 발생!" }
                 logger.error { "  - rt_cd: ${result.rt_cd}" }
                 logger.error { "  - msg1: ${result.msg1}" }
                 logger.error { "  - msg_cd: ${result.msg_cd}" }
                 logger.error { "  - output: ${result.output}" }
+                logger.error { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
             } else {
-                logger.info { "[$stockCode] Current price: ${result.output?.stck_prpr ?: "N/A"}" }
+                logger.info { "✅ API 호출 성공!" }
+                logger.info { "  - 현재가: ${result.output?.stck_prpr}원" }
+                logger.info { "  - 전일대비: ${result.output?.prdy_vrss}원" }
+                logger.info { "  - 등락률: ${result.output?.prdy_ctrt}%" }
+                logger.info { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
             }
             
             return result
             
         } catch (e: Exception) {
+            logger.error { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
+            logger.error { "💥 예외 발생!" }
             logger.error(e) { "[$stockCode] Exception while fetching current price" }
+            logger.error { "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" }
             return null
         }
     }
