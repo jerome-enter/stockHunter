@@ -139,6 +139,26 @@ curl -X POST http://localhost:3000/api/v1/validate-credentials \
 
 ## 🔧 문제 해결
 
+### Docker 재실행 방법
+
+```bash
+# 간단한 재시작 (코드 변경 없을 때)
+docker-compose restart
+
+# 특정 서비스만 재시작
+docker-compose restart kotlin-screener
+docker-compose restart fastapi-gateway
+
+# 완전 재시작 (코드 변경 있을 때)
+docker-compose down
+docker-compose up -d --build
+
+# 강제 재빌드 (캐시 무시)
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
 ### 서비스가 시작되지 않을 때
 
 ```bash
@@ -147,11 +167,16 @@ lsof -i :8080  # Kotlin
 lsof -i :3000  # FastAPI
 
 # 2. 로그 확인
-docker-compose logs -f
+docker-compose logs -f                    # 전체 로그
+docker-compose logs kotlin-screener       # Kotlin만
+docker-compose logs fastapi-gateway       # FastAPI만
 
-# 3. 완전 재시작
-docker-compose down
-docker-compose up -d --build
+# 3. 실시간 로그 보기
+docker-compose logs -f --tail=50
+
+# 4. 컨테이너 상태 확인
+docker-compose ps
+docker ps -a
 ```
 
 ### 빌드 오류가 날 때
